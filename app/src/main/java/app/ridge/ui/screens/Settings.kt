@@ -4,7 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -312,15 +313,15 @@ private fun Slider(value: Float, onValueChange: (Float) -> Unit) {
             .fillMaxWidth()
             .height(34.dp)
             .pointerInput(Unit) {
-                androidx.compose.foundation.gestures.detectTapGestures { offset ->
-                    val f = (offset.x / size.width).coerceIn(0f, 1f)
+                detectTapGestures { offset ->
+                    val f = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
                     onValueChange(f)
                 }
             }
             .pointerInput(Unit) {
-                androidx.compose.foundation.gestures.detectDragGestures(
+                detectDragGestures(
                     onDrag = { change, _ ->
-                        val f = (change.position.x / size.width).coerceIn(0f, 1f)
+                        val f = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
                         onValueChange(f)
                     }
                 )
