@@ -57,7 +57,7 @@ fun AudioSheet(
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(c.paper)
                 .border(
-                    BorderStroke(3.5.dp, c.ink),
+                    BorderStroke(3.5.dp, c.border),
                     RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
                 )
                 .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 22.dp),
@@ -147,7 +147,7 @@ private fun OutRow(
             .alphaIf(disabled, alphaVal = 0.4f)
             .clip(RoundedCornerShape(7.dp))
             .background(rowBg)
-            .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp))
+            .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp))
             .clickable(enabled = !disabled, onClick = onClick)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -158,7 +158,7 @@ private fun OutRow(
                 .size(38.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(iconBg ?: c.paper)
-                .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(8.dp))
+                .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(8.dp))
         )
         Column(Modifier.weight(1f)) {
             Text(

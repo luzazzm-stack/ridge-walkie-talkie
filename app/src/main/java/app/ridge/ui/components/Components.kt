@@ -106,7 +106,7 @@ fun RidgePrimaryButton(
             .height(minHeight)
             .clip(RoundedCornerShape(s.radius))
             .background(c.hivis)
-            .border(BorderStroke(s.border, c.ink), RoundedCornerShape(s.radius))
+            .border(BorderStroke(s.border, c.border), RoundedCornerShape(s.radius))
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
@@ -136,7 +136,7 @@ fun RidgeGhostButton(
             .height(minHeight)
             .clip(RoundedCornerShape(s.radius))
             .background(c.paper)
-            .border(BorderStroke(s.border, c.ink), RoundedCornerShape(s.radius))
+            .border(BorderStroke(s.border, c.border), RoundedCornerShape(s.radius))
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
@@ -161,7 +161,7 @@ fun RidgeToggle(checked: Boolean, onChange: (Boolean) -> Unit) {
             .size(width = 50.dp, height = 30.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(bg)
-            .border(BorderStroke(s.border, c.ink), RoundedCornerShape(16.dp))
+            .border(BorderStroke(s.border, c.border), RoundedCornerShape(16.dp))
             .clickable { onChange(!checked) },
     ) {
         Box(
@@ -187,7 +187,7 @@ fun Segmented(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(s.radius))
-            .border(BorderStroke(s.border, c.ink), RoundedCornerShape(s.radius))
+            .border(BorderStroke(s.border, c.border), RoundedCornerShape(s.radius))
     ) {
         options.forEachIndexed { i, label ->
             val active = i == selectedIndex
@@ -233,7 +233,7 @@ fun SignalBars(strength: Int, weak: Boolean = false, modifier: Modifier = Modifi
                 Modifier
                     .width(4.dp)
                     .height(h.dp)
-                    .border(BorderStroke(2.dp, c.ink), RoundedCornerShape(1.dp))
+                    .border(BorderStroke(2.dp, c.border), RoundedCornerShape(1.dp))
                     .background(
                         when {
                             filled && weak -> c.hivis
@@ -287,7 +287,7 @@ fun Avatar(letter: Char, bg: Color, modifier: Modifier = Modifier) {
             .size(38.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
-            .border(BorderStroke(s.border, c.ink), RoundedCornerShape(8.dp)),
+            .border(BorderStroke(s.border, c.border), RoundedCornerShape(8.dp)),
         contentAlignment = Alignment.Center,
     ) {
         Text(

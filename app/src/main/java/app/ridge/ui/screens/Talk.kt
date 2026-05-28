@@ -74,7 +74,7 @@ fun TalkScreen(
                         .size(36.dp)
                         .clip(RoundedCornerShape(7.dp))
                         .background(c.paper)
-                        .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp))
+                        .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp))
                         .clickable(onClick = onLeave),
                     contentAlignment = Alignment.Center,
                 ) { Text("‹", fontSize = 20.sp, fontWeight = FontWeight.Black, color = c.ink) }
@@ -94,7 +94,7 @@ fun TalkScreen(
                     Modifier
                         .clip(RoundedCornerShape(7.dp))
                         .background(c.hivis)
-                        .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp))
+                        .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp))
                         .clickable(onClick = onInvite)
                         .padding(horizontal = 11.dp, vertical = 8.dp),
                 ) {
@@ -113,7 +113,7 @@ fun TalkScreen(
                         .size(36.dp)
                         .clip(RoundedCornerShape(7.dp))
                         .background(c.paper)
-                        .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp))
+                        .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp))
                         .clickable(onClick = onSettings),
                     contentAlignment = Alignment.Center,
                 ) { Text("⚙", fontSize = 18.sp, color = c.ink) }
@@ -197,7 +197,7 @@ fun TalkScreen(
             ) {
                 Column {
                     Text(
-                        "v0.2 · UI preview",
+                        "v0.4 · mic is live, transport is M5",
                         fontFamily = RidgeTheme.type.mono,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
@@ -205,7 +205,7 @@ fun TalkScreen(
                         color = c.hivisInk,
                     )
                     Text(
-                        "Discovery is live (BT + Wi-Fi). Voice transport between phones ships in v0.3 — pressing PTT shows the UI state but won't broadcast audio yet.",
+                        "Hands-free opens the mic (even with screen off) and lights up the UI when you speak. Voice doesn't reach other phones yet — the UDP voice transport ships in M5.",
                         fontFamily = RidgeTheme.type.mono,
                         fontSize = 11.sp,
                         lineHeight = 16.sp,
@@ -310,7 +310,7 @@ private fun AudioOutChip(state: UiState, onClick: () -> Unit) {
         Modifier
             .clip(RoundedCornerShape(7.dp))
             .background(c.paper)
-            .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp))
+            .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp))
             .clickable { onClick() }
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -418,7 +418,7 @@ private fun VoxListenRing(active: Boolean) {
                 .size(184.dp)
                 .clip(CircleShape)
                 .background(if (active) c.hivis else c.paper)
-                .border(BorderStroke(s.borderHeavy, c.ink), CircleShape),
+                .border(BorderStroke(s.borderHeavy, c.border), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Column(

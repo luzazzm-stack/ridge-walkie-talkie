@@ -34,6 +34,7 @@ import app.ridge.ui.screens.InviteScreen
 import app.ridge.ui.screens.NameGroupScreen
 import app.ridge.ui.screens.PermStatus
 import app.ridge.ui.screens.SettingsScreen
+import app.ridge.ui.components.ConfirmDialog
 import app.ridge.ui.screens.SosScreen
 import app.ridge.ui.screens.SplashScreen
 import app.ridge.ui.screens.TalkScreen
@@ -161,6 +162,7 @@ class MainActivity : ComponentActivity() {
         val nav = rememberNavController()
         val state by store.state.collectAsState()
         var showSheet by remember { mutableStateOf(false) }
+        var showLeaveConfirm by remember { mutableStateOf(false) }
 
         val start = when {
             state.needsPermissions -> "splash"
@@ -168,6 +170,7 @@ class MainActivity : ComponentActivity() {
             else -> "talk"
         }
 
+        Box(Modifier.fillMaxSize()) {
         NavHost(navController = nav, startDestination = start) {
             composable("splash") {
                 LaunchedEffect(state.needsPermissions) {
@@ -233,10 +236,7 @@ class MainActivity : ComponentActivity() {
                     onOpenAudio = { showSheet = true },
                     onSettings = { nav.navigate("settings") },
                     onInvite = { nav.navigate("invite") },
-                    onLeave = {
-                        store.leaveGroup()
-                        nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
-                    },
+                    onLeave = { showLeaveConfirm = true },
                     onTestSos = { store.fireSos("Pemba") },
                 )
                 if (showSheet) {
@@ -269,10 +269,7 @@ class MainActivity : ComponentActivity() {
                 SettingsScreen(
                     state = state,
                     onBack = { nav.popBackStack() },
-                    onLeaveGroup = {
-                        store.leaveGroup()
-                        nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
-                    },
+                    onLeaveGroup = { showLeaveConfirm = true },
                     onTheme = { store.setNight(it == 1) },
                     onQuality = { store.setVoiceQuality(it) },
                     onSos = { store.setSosArmed(it) },
@@ -283,6 +280,24 @@ class MainActivity : ComponentActivity() {
                     onBtRelay = { store.setBtRelay(it) },
                 )
             }
+        }
+        if (showLeaveConfirm) {
+            ConfirmDialog(
+                title = "Leave the group?",
+                body = "You'll go back to the home screen. Anyone who joined with " +
+                        "code ${state.groupCode} stays connected. You can rejoin " +
+                        "with the same code anytime.",
+                confirmLabel = "Leave",
+                cancelLabel = "Stay",
+                danger = true,
+                onConfirm = {
+                    showLeaveConfirm = false
+                    store.leaveGroup()
+                    nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
+                },
+                onDismiss = { showLeaveConfirm = false },
+            )
+        }
         }
     }
 }

@@ -55,7 +55,7 @@ fun InviteScreen(
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(8.dp))
                     .background(c.paper)
-                    .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(8.dp))
+                    .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(8.dp))
                     .clickable { onBack() },
                 contentAlignment = Alignment.Center,
             ) { Text("‹", fontSize = 22.sp, fontWeight = FontWeight.Black, color = c.ink) }
@@ -126,7 +126,7 @@ fun InviteScreen(
                         .size(width = 56.dp, height = 70.dp)
                         .clip(RoundedCornerShape(7.dp))
                         .background(c.paper)
-                        .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp)),
+                        .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(

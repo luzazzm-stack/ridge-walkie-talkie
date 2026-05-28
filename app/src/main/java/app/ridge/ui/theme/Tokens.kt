@@ -12,17 +12,18 @@ import androidx.compose.ui.unit.sp
 
 @Immutable
 data class RidgeColors(
-    val ink: Color,
-    val ink2: Color,
-    val muted: Color,
-    val bone: Color,
-    val paper: Color,
-    val hivis: Color,
-    val hivisInk: Color,
-    val beacon: Color,
-    val alarm: Color,
-    val field: Color,
-    val bt: Color,
+    val ink: Color,           // primary text + iconography
+    val ink2: Color,          // secondary text
+    val muted: Color,         // tertiary
+    val bone: Color,          // page background
+    val paper: Color,         // card surface
+    val border: Color,        // card border (less harsh than ink in dark)
+    val hivis: Color,         // primary action
+    val hivisInk: Color,      // hi-vis used as text
+    val beacon: Color,        // attention / range
+    val alarm: Color,         // SOS
+    val field: Color,         // success / connected
+    val bt: Color,            // bluetooth tag
     val isNight: Boolean,
 )
 
@@ -32,6 +33,7 @@ val DayColors = RidgeColors(
     muted = Color(0xFF56554D),
     bone = Color(0xFFF2F0EB),
     paper = Color(0xFFFFFFFF),
+    border = Color(0xFF111111),       // hard ink border in day
     hivis = Color(0xFFFF4D1C),
     hivisInk = Color(0xFFC8350C),
     beacon = Color(0xFFFFC400),
@@ -41,18 +43,23 @@ val DayColors = RidgeColors(
     isNight = false,
 )
 
+/* Night palette — overhauled.
+   Goals: AMOLED-safe near-black background, clear paper-vs-bone step,
+   warm dim borders (NOT cream — reduces visual noise), brighter
+   field/bt for legibility on dark, amber primary preserved for night vision. */
 val NightColors = RidgeColors(
-    ink = Color(0xFFF2F0EB),
-    ink2 = Color(0xFFC8C6BE),
-    muted = Color(0xFF88857B),
-    bone = Color(0xFF0A0907),
-    paper = Color(0xFF15130F),
-    hivis = Color(0xFFFFB300),   // amber preserves night vision
-    hivisInk = Color(0xFFFFB300),
-    beacon = Color(0xFFFFC400),
-    alarm = Color(0xFFE11900),
-    field = Color(0xFF1F6F5C),
-    bt = Color(0xFF1565C0),
+    ink = Color(0xFFEFEDE4),          // warm cream text
+    ink2 = Color(0xFFB9B6AB),         // secondary
+    muted = Color(0xFF7C796F),        // tertiary
+    bone = Color(0xFF0A0905),          // page bg (warm near-black)
+    paper = Color(0xFF1B1814),         // card surface — clearly above bg
+    border = Color(0xFF3A352E),        // dim warm border (not cream)
+    hivis = Color(0xFFFFB000),         // amber (preserves night vision)
+    hivisInk = Color(0xFFFFC85A),     // softer amber for text on dark
+    beacon = Color(0xFFF4C242),       // beacon yellow toned down
+    alarm = Color(0xFFFF4035),        // alarm red, slightly de-saturated for dark
+    field = Color(0xFF52C49C),         // brighter sage green
+    bt = Color(0xFF6BA8FF),            // brighter bluetooth blue
     isNight = true,
 )
 

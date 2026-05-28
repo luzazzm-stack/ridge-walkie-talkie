@@ -63,8 +63,8 @@ fun EmptyScreen(
             val a2 by t.animateFloat(0.22f, 0.45f, infiniteRepeatable(tween(2000, delayMillis = 300), RepeatMode.Reverse), label = "a2")
 
             Box(Modifier.size(160.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(160.dp).alpha(a1).border(BorderStroke(2.5.dp, c.ink), CircleShape))
-                Box(Modifier.size(108.dp).alpha(a2).border(BorderStroke(2.5.dp, c.ink), CircleShape))
+                Box(Modifier.size(160.dp).alpha(a1).border(BorderStroke(2.5.dp, c.border), CircleShape))
+                Box(Modifier.size(108.dp).alpha(a2).border(BorderStroke(2.5.dp, c.border), CircleShape))
                 RidgeLogo(size = 52.dp, tile = false)
             }
             Spacer(Modifier.height(8.dp))

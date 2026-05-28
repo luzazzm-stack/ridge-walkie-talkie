@@ -63,7 +63,7 @@ fun SettingsScreen(
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(8.dp))
                     .background(c.paper)
-                    .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(8.dp))
+                    .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(8.dp))
                     .clickable { onBack() },
                 contentAlignment = Alignment.Center,
             ) { Text("‹", fontSize = 22.sp, fontWeight = FontWeight.Black, color = c.ink) }
@@ -108,7 +108,7 @@ fun SettingsScreen(
                         Modifier
                             .clip(RoundedCornerShape(7.dp))
                             .background(c.alarm)
-                            .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp))
+                            .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp))
                             .clickable { onLeaveGroup() }
                             .padding(horizontal = 14.dp, vertical = 11.dp),
                     ) {
@@ -336,7 +336,7 @@ private fun Slider(value: Float, onValueChange: (Float) -> Unit) {
                 .height(14.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(c.bone)
-                .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(8.dp))
+                .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(8.dp))
         ) {
             Box(
                 Modifier
