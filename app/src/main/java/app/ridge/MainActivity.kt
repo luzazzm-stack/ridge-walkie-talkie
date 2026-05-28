@@ -30,6 +30,7 @@ import app.ridge.core.TalkMode
 import app.ridge.ui.screens.AudioSheet
 import app.ridge.ui.screens.EmptyScreen
 import app.ridge.ui.screens.GroupSetupScreen
+import app.ridge.ui.screens.NameGroupScreen
 import app.ridge.ui.screens.PermStatus
 import app.ridge.ui.screens.SettingsScreen
 import app.ridge.ui.screens.SosScreen
@@ -149,19 +150,29 @@ class MainActivity : ComponentActivity() {
             }
             composable("empty") {
                 EmptyScreen(
-                    onStart = {
-                        store.setHasGroup(true)
-                        nav.navigate("talk") { popUpTo("empty") { inclusive = true } }
-                    },
+                    onStart = { nav.navigate("name-group") },
                     onJoin = { nav.navigate("group-setup") }
+                )
+            }
+            composable("name-group") {
+                NameGroupScreen(
+                    onStart = { name ->
+                        store.startGroup(name)
+                        nav.navigate("talk") {
+                            popUpTo("empty") { inclusive = false }
+                        }
+                    },
+                    onBack = { nav.popBackStack() }
                 )
             }
             composable("group-setup") {
                 GroupSetupScreen(
                     code = state.groupCode,
                     onJoin = {
-                        store.setHasGroup(true)
-                        nav.navigate("talk") { popUpTo("empty") { inclusive = true } }
+                        store.startGroup("Joined group")
+                        nav.navigate("talk") {
+                            popUpTo("empty") { inclusive = false }
+                        }
                     },
                     onBack = { nav.popBackStack() }
                 )
@@ -201,6 +212,11 @@ class MainActivity : ComponentActivity() {
             composable("settings") {
                 SettingsScreen(
                     state = state,
+                    onBack = { nav.popBackStack() },
+                    onLeaveGroup = {
+                        store.leaveGroup()
+                        nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
+                    },
                     onTheme = { store.setNight(it == 1) },
                     onQuality = { store.setVoiceQuality(it) },
                     onSos = { store.setSosArmed(it) },

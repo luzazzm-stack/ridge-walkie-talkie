@@ -3,6 +3,7 @@ package app.ridge.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,7 +46,8 @@ fun GroupSetupScreen(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(8.dp))
-                    .background(c.paper).border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(8.dp)),
+                    .background(c.paper).border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(8.dp))
+                    .clickable { onBack() },
                 contentAlignment = Alignment.Center,
             ) { Text("‹", fontSize = 22.sp, fontWeight = FontWeight.Black, color = c.ink) }
             Text(

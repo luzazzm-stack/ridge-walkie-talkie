@@ -70,7 +70,7 @@ fun TalkScreen(
                 Column(Modifier.weight(1f).clickable(onClick = onTestSos)) {
                     RidgeLabel("Channel", color = c.muted)
                     Text(
-                        state.groupName,
+                        state.groupName.ifBlank { "Untitled" },
                         fontFamily = RidgeTheme.type.display,
                         fontWeight = FontWeight.Black,
                         fontSize = 19.sp,
@@ -124,10 +124,58 @@ fun TalkScreen(
             }
 
             Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.members.forEach { MemberRow(it) }
+                if (state.members.isEmpty()) {
+                    RidgeCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                "Waiting for group members…",
+                                fontFamily = RidgeTheme.type.display,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = c.ink,
+                            )
+                            Text(
+                                "Share code ${state.groupCode.ifBlank { "—" }} with your group, or have them scan your QR. Anyone within ~80m will appear here.",
+                                fontFamily = RidgeTheme.type.mono,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp,
+                                color = c.muted,
+                            )
+                        }
+                    }
+                } else {
+                    state.members.forEach { MemberRow(it) }
+                }
             }
 
-            Spacer(Modifier.height(16.dp))
+            // Honesty banner — voice transport isn't wired yet
+            Box(
+                Modifier
+                    .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 18.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(c.beacon.copy(alpha = 0.18f))
+                    .border(BorderStroke(2.5.dp, c.beacon), RoundedCornerShape(7.dp))
+                    .padding(12.dp),
+            ) {
+                Column {
+                    Text(
+                        "v0.2 · UI preview",
+                        fontFamily = RidgeTheme.type.mono,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.2.sp,
+                        color = c.hivisInk,
+                    )
+                    Text(
+                        "Discovery is live (BT + Wi-Fi). Voice transport between phones ships in v0.3 — pressing PTT shows the UI state but won't broadcast audio yet.",
+                        fontFamily = RidgeTheme.type.mono,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        color = c.ink,
+                    )
+                }
+            }
         }
     }
 }

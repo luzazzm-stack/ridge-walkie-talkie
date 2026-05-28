@@ -3,6 +3,8 @@ package app.ridge.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,6 +38,8 @@ import app.ridge.ui.theme.RidgeTheme
 @Composable
 fun SettingsScreen(
     state: UiState,
+    onBack: () -> Unit,
+    onLeaveGroup: () -> Unit,
     onTheme: (Int) -> Unit,         // 0=Day 1=Night 2=Auto
     onQuality: (Float) -> Unit,
     onSos: (Boolean) -> Unit,
@@ -53,14 +58,70 @@ fun SettingsScreen(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            "Settings",
-            fontFamily = RidgeTheme.type.display,
-            fontWeight = FontWeight.Black,
-            fontSize = 24.sp,
-            letterSpacing = (-0.5).sp,
-            color = c.ink,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(
+                Modifier.size(38.dp).clip(RoundedCornerShape(8.dp))
+                    .background(c.paper)
+                    .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(8.dp))
+                    .clickable { onBack() },
+                contentAlignment = Alignment.Center,
+            ) { Text("‹", fontSize = 22.sp, fontWeight = FontWeight.Black, color = c.ink) }
+            Text(
+                "Settings",
+                fontFamily = RidgeTheme.type.display,
+                fontWeight = FontWeight.Black,
+                fontSize = 24.sp,
+                letterSpacing = (-0.5).sp,
+                color = c.ink,
+            )
+        }
+        if (state.hasGroup) {
+            RidgeCard(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Current group",
+                            fontFamily = RidgeTheme.type.mono,
+                            fontSize = 10.5.sp,
+                            color = c.muted,
+                        )
+                        Text(
+                            state.groupName.ifBlank { "Untitled" },
+                            fontFamily = RidgeTheme.type.display,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp,
+                            color = c.ink,
+                        )
+                        Text(
+                            "code ${state.groupCode}",
+                            fontFamily = RidgeTheme.type.mono,
+                            fontSize = 10.5.sp,
+                            color = c.muted,
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(c.alarm)
+                            .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp))
+                            .clickable { onLeaveGroup() }
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                    ) {
+                        Text(
+                            "LEAVE",
+                            fontFamily = RidgeTheme.type.display,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp,
+                            color = androidx.compose.ui.graphics.Color.White,
+                        )
+                    }
+                }
+            }
+        }
 
         // Wi-Fi voice quality slider
         RidgeCard(Modifier.fillMaxWidth()) {
@@ -249,10 +310,24 @@ private fun Slider(value: Float, onValueChange: (Float) -> Unit) {
     androidx.compose.foundation.layout.BoxWithConstraints(
         Modifier
             .fillMaxWidth()
-            .height(30.dp),
+            .height(34.dp)
+            .pointerInput(Unit) {
+                androidx.compose.foundation.gestures.detectTapGestures { offset ->
+                    val f = (offset.x / size.width).coerceIn(0f, 1f)
+                    onValueChange(f)
+                }
+            }
+            .pointerInput(Unit) {
+                androidx.compose.foundation.gestures.detectDragGestures(
+                    onDrag = { change, _ ->
+                        val f = (change.position.x / size.width).coerceIn(0f, 1f)
+                        onValueChange(f)
+                    }
+                )
+            },
     ) {
         val trackWidth = maxWidth
-        // track
+        // track (background)
         Box(
             Modifier
                 .align(Alignment.Center)
@@ -270,7 +345,11 @@ private fun Slider(value: Float, onValueChange: (Float) -> Unit) {
             )
         }
         val knobOffset = (trackWidth * frac) - 15.dp
-        val safeOffset = if (knobOffset < 0.dp) 0.dp else if (knobOffset > trackWidth - 30.dp) trackWidth - 30.dp else knobOffset
+        val safeOffset = when {
+            knobOffset < 0.dp -> 0.dp
+            knobOffset > trackWidth - 30.dp -> trackWidth - 30.dp
+            else -> knobOffset
+        }
         Box(
             Modifier
                 .padding(start = safeOffset)

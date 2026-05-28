@@ -35,8 +35,8 @@ data class UiState(
     val wiredPluggedIn: Boolean = false,
     val transmitting: Boolean = false,
     val voxLevel: Int = 60,
-    val members: List<Member> = sampleMembers(),
-    val groupName: String = "Annapurna Base",
+    val members: List<Member> = emptyList(),
+    val groupName: String = "",
     val groupCode: String = "4417",
     val sosLive: Boolean = false,
     val sosFromName: String? = null,
@@ -79,6 +79,29 @@ class RidgeStore {
 
     fun setNeedsPermissions(v: Boolean) = _state.update { it.copy(needsPermissions = v) }
     fun setHasGroup(v: Boolean) = _state.update { it.copy(hasGroup = v) }
+    fun setGroupName(name: String) = _state.update { it.copy(groupName = name) }
+    fun setGroupCode(code: String) = _state.update { it.copy(groupCode = code) }
+
+    fun startGroup(name: String) = _state.update {
+        it.copy(
+            hasGroup = true,
+            groupName = name.trim().ifBlank { "Untitled group" },
+            groupCode = (1000..9999).random().toString(),
+            members = emptyList(),
+            transmitting = false,
+            sosLive = false,
+        )
+    }
+
+    fun leaveGroup() = _state.update {
+        it.copy(
+            hasGroup = false,
+            groupName = "",
+            members = emptyList(),
+            transmitting = false,
+            sosLive = false,
+        )
+    }
 
     fun updateMembers(transform: (List<Member>) -> List<Member>) =
         _state.update { it.copy(members = transform(it.members)) }
@@ -88,9 +111,3 @@ class RidgeStore {
     }
 }
 
-private fun sampleMembers(): List<Member> = listOf(
-    Member("p", "Pemba", 'P', isLead = true, rssi = -38, distanceM = 0, talking = true, lastSeenSec = 0),
-    Member("s", "Sita", 'S', rssi = -58, distanceM = 38, lastSeenSec = 120),
-    Member("r", "Raj", 'R', rssi = -78, distanceM = 62, lastSeenSec = 300),
-    Member("k", "Karma", 'K', rssi = -90, distanceM = 95, lastSeenSec = 420, viaBluetooth = true),
-)
