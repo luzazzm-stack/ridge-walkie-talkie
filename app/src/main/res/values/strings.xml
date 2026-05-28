@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RIDGE</string>
+    <string name="tagline">Built for the dead zone</string>
+    <string name="notif_channel_radio">Radio</string>
+    <string name="notif_channel_sos">SOS alerts</string>
+</resources>

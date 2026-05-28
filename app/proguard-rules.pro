@@ -1,0 +1,3 @@
+-dontwarn kotlin.**
+-keep class app.ridge.** { *; }
+-keepattributes SourceFile,LineNumberTable
