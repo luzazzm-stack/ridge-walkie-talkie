@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -110,7 +111,7 @@ fun TalkScreen(
                 )
             }
             Spacer(Modifier.height(12.dp))
-            Divider2(Modifier.padding(horizontal = 18.dp))
+            Divider2(modifier = Modifier.padding(horizontal = 18.dp))
 
             // members
             Row(

@@ -4,14 +4,17 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.app.Service
+import android.content.Context
 import android.os.Build
+import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import androidx.lifecycle.LifecycleService
 import app.ridge.MainActivity
-import app.ridge.R
 import app.ridge.RidgeApp
 
-class RadioService : LifecycleService() {
+class RadioService : Service() {
+
+    override fun onBind(intent: Intent?): IBinder? = null
 
     private lateinit var router: AudioRouter
     private lateinit var discovery: Discovery
