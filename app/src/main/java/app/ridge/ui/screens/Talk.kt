@@ -53,6 +53,8 @@ fun TalkScreen(
     onPress: (Boolean) -> Unit,
     onOpenAudio: () -> Unit,
     onSettings: () -> Unit,
+    onInvite: () -> Unit,
+    onLeave: () -> Unit,
     onTestSos: () -> Unit,
 ) {
     val c = RidgeTheme.colors
@@ -62,23 +64,49 @@ fun TalkScreen(
         ConnModeStrip(state.connMode, state.autoMode, onSelect = onConnMode)
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            // channel header + output pill
+            // channel header — back + channel + invite + settings
             Row(
-                Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 11.dp, bottom = 6.dp),
+                Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(c.paper)
+                        .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp))
+                        .clickable(onClick = onLeave),
+                    contentAlignment = Alignment.Center,
+                ) { Text("‹", fontSize = 20.sp, fontWeight = FontWeight.Black, color = c.ink) }
+                Spacer(Modifier.size(10.dp))
                 Column(Modifier.weight(1f).clickable(onClick = onTestSos)) {
                     RidgeLabel("Channel", color = c.muted)
                     Text(
                         state.groupName.ifBlank { "Untitled" },
                         fontFamily = RidgeTheme.type.display,
                         fontWeight = FontWeight.Black,
-                        fontSize = 19.sp,
+                        fontSize = 18.sp,
                         letterSpacing = (-0.4).sp,
                         color = c.ink,
                     )
                 }
-                AudioOutChip(state, onClick = onOpenAudio)
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(c.hivis)
+                        .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(7.dp))
+                        .clickable(onClick = onInvite)
+                        .padding(horizontal = 11.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        "+ INVITE",
+                        fontFamily = RidgeTheme.type.display,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.6.sp,
+                        color = androidx.compose.ui.graphics.Color.White,
+                    )
+                }
                 Spacer(Modifier.size(8.dp))
                 Box(
                     Modifier
@@ -89,6 +117,15 @@ fun TalkScreen(
                         .clickable(onClick = onSettings),
                     contentAlignment = Alignment.Center,
                 ) { Text("⚙", fontSize = 18.sp, color = c.ink) }
+            }
+
+            // second row: audio output pill
+            Row(
+                Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 0.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.weight(1f))
+                AudioOutChip(state, onClick = onOpenAudio)
             }
 
             // PTT or VOX

@@ -30,6 +30,7 @@ import app.ridge.core.TalkMode
 import app.ridge.ui.screens.AudioSheet
 import app.ridge.ui.screens.EmptyScreen
 import app.ridge.ui.screens.GroupSetupScreen
+import app.ridge.ui.screens.InviteScreen
 import app.ridge.ui.screens.NameGroupScreen
 import app.ridge.ui.screens.PermStatus
 import app.ridge.ui.screens.SettingsScreen
@@ -37,6 +38,8 @@ import app.ridge.ui.screens.SosScreen
 import app.ridge.ui.screens.SplashScreen
 import app.ridge.ui.screens.TalkScreen
 import app.ridge.ui.theme.RidgeTheme
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 
 class MainActivity : ComponentActivity() {
 
@@ -49,6 +52,36 @@ class MainActivity : ComponentActivity() {
             store.setNeedsPermissions(!allGranted)
             if (allGranted) startRadioService()
         }
+
+    private var onScanResult: ((String) -> Unit)? = null
+    private val scannerLauncher = registerForActivityResult(ScanContract()) { result ->
+        val text = result.contents ?: return@registerForActivityResult
+        onScanResult?.invoke(text)
+    }
+
+    fun launchScanner(onResult: (String) -> Unit) {
+        onScanResult = onResult
+        val opts = ScanOptions().apply {
+            setPrompt("Point camera at RIDGE QR")
+            setBeepEnabled(true)
+            setOrientationLocked(true)
+            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+        }
+        scannerLauncher.launch(opts)
+    }
+
+    /** Parses "ridge:CODE|NAME" or plain digits. Returns code + optional name. */
+    private fun parseInvite(payload: String): Pair<String, String?> {
+        val trimmed = payload.trim()
+        if (trimmed.startsWith("ridge:", ignoreCase = true)) {
+            val body = trimmed.substringAfter(":")
+            val code = body.substringBefore("|")
+            val name = body.substringAfter("|", missingDelimiterValue = "").ifBlank { null }
+            return code.filter { it.isDigit() }.padStart(4, '0').take(4) to name
+        }
+        val digits = trimmed.filter { it.isDigit() }
+        return digits.padStart(4, '0').take(4) to null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -167,9 +200,20 @@ class MainActivity : ComponentActivity() {
             }
             composable("group-setup") {
                 GroupSetupScreen(
-                    code = state.groupCode,
-                    onJoin = {
-                        store.startGroup("Joined group")
+                    onScanQr = {
+                        launchScanner { scanned ->
+                            // payload format: "ridge:CODE|NAME" or plain CODE
+                            val (code, name) = parseInvite(scanned)
+                            store.startGroup(name ?: "Joined group")
+                            store.setGroupCode(code)
+                            nav.navigate("talk") {
+                                popUpTo("empty") { inclusive = false }
+                            }
+                        }
+                    },
+                    onJoinWithCode = { code ->
+                        store.startGroup("Group $code")
+                        store.setGroupCode(code)
                         nav.navigate("talk") {
                             popUpTo("empty") { inclusive = false }
                         }
@@ -184,10 +228,15 @@ class MainActivity : ComponentActivity() {
                     onTalkMode = { store.setTalkMode(it) },
                     onPress = { down ->
                         store.setTransmitting(down)
-                        // M2: AudioRecord + Opus encode + UDP send
+                        // M3: AudioRecord + Opus encode + UDP send
                     },
                     onOpenAudio = { showSheet = true },
                     onSettings = { nav.navigate("settings") },
+                    onInvite = { nav.navigate("invite") },
+                    onLeave = {
+                        store.leaveGroup()
+                        nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
+                    },
                     onTestSos = { store.fireSos("Pemba") },
                 )
                 if (showSheet) {
@@ -208,6 +257,13 @@ class MainActivity : ComponentActivity() {
                         onFalseAlarm = { store.clearSos() },
                     )
                 }
+            }
+            composable("invite") {
+                InviteScreen(
+                    groupName = state.groupName,
+                    groupCode = state.groupCode,
+                    onBack = { nav.popBackStack() },
+                )
             }
             composable("settings") {
                 SettingsScreen(

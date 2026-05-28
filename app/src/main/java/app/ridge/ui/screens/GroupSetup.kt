@@ -15,19 +15,29 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ridge.ui.components.RidgeCard
+import app.ridge.ui.components.RidgeGhostButton
 import app.ridge.ui.components.RidgeLabel
 import app.ridge.ui.components.RidgePrimaryButton
 import app.ridge.ui.components.Segmented
@@ -35,12 +45,13 @@ import app.ridge.ui.theme.RidgeTheme
 
 @Composable
 fun GroupSetupScreen(
-    code: String = "4417",
-    onJoin: () -> Unit,
+    onScanQr: () -> Unit,
+    onJoinWithCode: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     val c = RidgeTheme.colors
     var tab by remember { mutableIntStateOf(0) }
+    var code by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().background(c.bone).padding(horizontal = 22.dp, vertical = 18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -72,91 +83,111 @@ fun GroupSetupScreen(
                 Column(
                     Modifier.padding(20.dp).fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    // QR placeholder (visual proxy)
-                    QrPlaceholder()
+                    Box(
+                        Modifier
+                            .size(160.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(c.paper)
+                            .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("📷", fontSize = 64.sp)
+                    }
                     Text(
-                        "Point at a friend's My QR screen —\njoins instantly, even offline.",
+                        "Point at a friend's RIDGE QR",
+                        fontFamily = RidgeTheme.type.display,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 16.sp,
+                        color = c.ink,
+                    )
+                    Text(
+                        "Ask them to open RIDGE → Invite. You'll see their QR — scan it to join their group.",
                         fontFamily = RidgeTheme.type.mono,
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                         lineHeight = 16.sp,
                         color = c.muted,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f).height(2.dp).background(c.ink.copy(alpha = 0.25f)))
-                Spacer(Modifier.size(12.dp))
-                RidgeLabel("OR SHARE A CODE")
-                Spacer(Modifier.size(12.dp))
-                Box(Modifier.weight(1f).height(2.dp).background(c.ink.copy(alpha = 0.25f)))
+            RidgePrimaryButton("Open camera to scan", onClick = onScanQr)
+        } else {
+            RidgeLabel("Enter the 4-digit group code")
+            Spacer(Modifier.height(8.dp))
+            RidgeCard(Modifier.fillMaxWidth()) {
+                BasicTextField(
+                    value = code,
+                    onValueChange = { new -> if (new.length <= 4 && new.all { it.isDigit() }) code = new },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        fontFamily = RidgeTheme.type.mono,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 32.sp,
+                        color = c.ink,
+                        textAlign = TextAlign.Center,
+                        letterSpacing = 12.sp,
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.NumberPassword,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (code.length == 4) onJoinWithCode(code)
+                    }),
+                    cursorBrush = SolidColor(c.hivis),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 22.dp),
+                    decorationBox = { inner ->
+                        if (code.isEmpty()) {
+                            Text(
+                                "1234",
+                                fontFamily = RidgeTheme.type.mono,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 32.sp,
+                                color = c.muted.copy(alpha = 0.45f),
+                                textAlign = TextAlign.Center,
+                                letterSpacing = 12.sp,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        inner()
+                    },
+                )
             }
-            Spacer(Modifier.height(12.dp))
-        }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-        ) {
-            code.toCharArray().forEachIndexed { i, ch ->
-                val highlight = i == code.length - 1
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Your friend can read this aloud over their radio or share it via text.",
+                fontFamily = RidgeTheme.type.mono,
+                fontSize = 11.sp,
+                color = c.muted,
+            )
+            Spacer(Modifier.height(18.dp))
+            if (code.length == 4) {
+                RidgePrimaryButton("Join group", onClick = { onJoinWithCode(code) })
+            } else {
                 Box(
-                    Modifier
-                        .size(width = 56.dp, height = 66.dp)
-                        .clip(RoundedCornerShape(7.dp))
-                        .background(c.paper)
-                        .border(BorderStroke(2.5.dp, if (highlight) c.hivis else c.ink), RoundedCornerShape(7.dp)),
+                    Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(7.dp))
+                        .background(c.bone)
+                        .border(BorderStroke(2.5.dp, c.muted), RoundedCornerShape(7.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        ch.toString(),
-                        fontFamily = RidgeTheme.type.mono,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 28.sp,
-                        color = c.ink,
+                        "ENTER 4 DIGITS",
+                        fontFamily = RidgeTheme.type.display,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 15.sp,
+                        color = c.muted,
                     )
                 }
             }
         }
-        Spacer(Modifier.height(18.dp))
-        RidgePrimaryButton("Join group", onClick = onJoin)
-    }
-}
 
-@Composable
-private fun QrPlaceholder() {
-    val c = RidgeTheme.colors
-    Box(
-        Modifier
-            .size(178.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(c.paper)
-            .border(BorderStroke(2.5.dp, c.ink), RoundedCornerShape(6.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        // Crude QR-feel: alternating squares grid via Row/Column. Replaced with real generator later.
-        Column(
-            Modifier.padding(10.dp).fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            repeat(15) { r ->
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    repeat(15) { col ->
-                        val on = ((r * 7 + col * 13 + r * col) % 3) == 0 ||
-                                (r in 0..3 && col in 0..3) ||
-                                (r in 0..3 && col in 11..14) ||
-                                (r in 11..14 && col in 0..3)
-                        Box(
-                            Modifier
-                                .size(9.dp)
-                                .background(if (on) c.ink else c.paper)
-                        )
-                    }
-                }
-            }
-        }
+        Spacer(Modifier.weight(1f))
+        RidgeGhostButton("Cancel", onClick = onBack)
+        Spacer(Modifier.height(8.dp))
     }
 }
