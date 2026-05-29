@@ -39,8 +39,21 @@ class WifiJoiner(private val ctx: Context) {
         // no-op on state; UI reads target SSID from store.joinSsid
     }
 
-    /** Read the currently joined Wi-Fi network and treat its gateway as the host. */
-    fun detectCurrentWifi(expectedSsid: String? = null): Boolean {
+    /** Read the currently joined Wi-Fi network and treat its gateway as the host.
+     *  Wrapped so a SecurityException (e.g. a missing/revoked permission) reports
+     *  a friendly failure instead of crashing the app. */
+    fun detectCurrentWifi(expectedSsid: String? = null): Boolean =
+        try {
+            detectCurrentWifiInner(expectedSsid)
+        } catch (e: Throwable) {
+            _state.value = JoinState.Failed(
+                "Couldn't read the Wi-Fi connection: ${e.message}",
+                listOf("exception: ${e.javaClass.simpleName}"),
+            )
+            false
+        }
+
+    private fun detectCurrentWifiInner(expectedSsid: String?): Boolean {
         val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         val diag = mutableListOf<String>()
