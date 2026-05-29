@@ -58,6 +58,7 @@ class VoiceTransport(
     private var sender: Thread? = null
     private var receiver: Thread? = null
     private var statsThread: Thread? = null
+    private var keepAliveThread: Thread? = null
 
     private var socket: DatagramSocket? = null
     private var mode: Mode? = null
@@ -93,14 +94,10 @@ class VoiceTransport(
             network?.bindSocket(s)
             s.bind(null) // ephemeral local port, but bound to the Wi-Fi network
             socket = s
-            // Hello packets so the host learns our address+port. Send a few in
-            // case the first is lost while the link settles.
-            val hello = byteArrayOf(0)
-            repeat(3) {
-                runCatching { s.send(DatagramPacket(hello, hello.size, hostAddr, hostPort)) }
-            }
         }.onFailure { onError("client connect: ${it.message}"); return }
         startThreads()
+        // We are connected to exactly one host — show it as a peer right away.
+        onPeerCount(1)
     }
 
     fun stop() {
@@ -110,6 +107,7 @@ class VoiceTransport(
         sender?.interrupt(); sender = null
         receiver?.interrupt(); receiver = null
         statsThread?.interrupt(); statsThread = null
+        keepAliveThread?.interrupt(); keepAliveThread = null
         runCatching { socket?.close() }
         socket = null
         peers.clear()
@@ -136,12 +134,29 @@ class VoiceTransport(
         receiver = Thread({ receiveLoop() }, "ridge-rx").apply { isDaemon = true; start() }
         sender = Thread({ sendLoop() }, "ridge-tx").apply { isDaemon = true; start() }
         statsThread = Thread({ statsLoop() }, "ridge-stats").apply { isDaemon = true; start() }
+        if (mode == Mode.Client) {
+            keepAliveThread = Thread({ keepAliveLoop() }, "ridge-keepalive").apply { isDaemon = true; start() }
+        }
     }
 
     private fun statsLoop() {
         while (running.get()) {
             onStats(txPackets.get(), rxPackets.get())
             runCatching { Thread.sleep(1000) }.getOrElse { return }
+        }
+    }
+
+    /** Client announces itself to the host every ~1.5s so the host registers
+     *  it (and re-registers after any drop) even if early hellos were lost. */
+    private fun keepAliveLoop() {
+        val hello = byteArrayOf(0)
+        while (running.get()) {
+            val s = socket
+            val addr = hostAddr
+            if (s != null && addr != null) {
+                runCatching { s.send(DatagramPacket(hello, hello.size, addr, hostPort)) }
+            }
+            runCatching { Thread.sleep(1500) }.getOrElse { return }
         }
     }
 

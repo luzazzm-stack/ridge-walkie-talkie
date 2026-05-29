@@ -153,29 +153,51 @@ fun TalkScreen(
             Spacer(Modifier.height(12.dp))
             Divider2(modifier = Modifier.padding(horizontal = 18.dp))
 
-            // members
+            // members — derived from the real transport peer count
+            val onlineCount = if (state.transportActive) state.peerCount else 0
             Row(
                 Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 11.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RidgeLabel("Members · ${state.members.size}")
+                RidgeLabel("Members · ${onlineCount + 1}")  // +1 = you
                 Spacer(Modifier.weight(1f))
-                RidgeLabel("↕ DISTANCE", color = c.hivisInk)
+                RidgeLabel(if (state.transmitting) "● ON AIR" else "LISTENING", color = c.hivisInk)
             }
 
             Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (state.members.isEmpty()) {
+                // "You" row — always present
+                MemberSimpleRow(
+                    name = "You",
+                    sub = if (state.role == Role.Host) "host of ${state.groupName.ifBlank { "this group" }}" else "joined",
+                    talking = state.transmitting,
+                    isYou = true,
+                )
+                // connected peers
+                if (onlineCount > 0) {
+                    val peerLabel = if (state.role == Role.Host) "Member" else "Host"
+                    repeat(onlineCount) { i ->
+                        MemberSimpleRow(
+                            name = if (onlineCount == 1 && state.role != Role.Host) "Host"
+                                   else "$peerLabel ${i + 1}",
+                            sub = "connected",
+                            talking = false,
+                            isYou = false,
+                        )
+                    }
+                } else if (!state.transportActive) {
                     RidgeCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Text(
-                                "Waiting for group members…",
+                                "Waiting to connect…",
                                 fontFamily = RidgeTheme.type.display,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 14.sp,
                                 color = c.ink,
                             )
                             Text(
-                                "Share code ${state.groupCode.ifBlank { "—" }} with your group, or have them scan your QR. Anyone within ~80m will appear here.",
+                                if (state.role == Role.Host)
+                                    "Tap + INVITE so friends can join. They appear here when connected."
+                                else "Finishing the connection to the host…",
                                 fontFamily = RidgeTheme.type.mono,
                                 fontSize = 11.sp,
                                 lineHeight = 16.sp,
@@ -183,8 +205,6 @@ fun TalkScreen(
                             )
                         }
                     }
-                } else {
-                    state.members.forEach { MemberRow(it) }
                 }
             }
 
@@ -332,6 +352,45 @@ private fun AudioOutChip(state: UiState, onClick: () -> Unit) {
             color = c.ink,
         )
         Text("▼", fontSize = 10.sp, color = c.ink)
+    }
+}
+
+@Composable
+private fun MemberSimpleRow(name: String, sub: String, talking: Boolean, isYou: Boolean) {
+    val c = RidgeTheme.colors
+    RidgeCard(
+        Modifier.fillMaxWidth(),
+        border = if (talking) c.hivis else c.border,
+    ) {
+        Row(
+            Modifier.padding(start = 11.dp, end = 11.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
+        ) {
+            Avatar(
+                letter = name.firstOrNull()?.uppercaseChar() ?: '?',
+                bg = if (talking) c.beacon else if (isYou) c.hivis else Color(0xFFCFE3DC),
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    name,
+                    fontFamily = RidgeTheme.type.display,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    color = c.ink,
+                )
+                Text(
+                    if (talking) "talking now" else sub,
+                    fontFamily = RidgeTheme.type.mono,
+                    fontSize = 10.5.sp,
+                    color = if (talking) c.hivisInk else c.muted,
+                )
+            }
+            Box(
+                Modifier.size(10.dp).clip(CircleShape)
+                    .background(if (talking) c.hivis else c.field)
+            )
+        }
     }
 }
 
