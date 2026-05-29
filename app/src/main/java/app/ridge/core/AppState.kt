@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.update
 enum class ConnMode { Bluetooth, WifiDirect, Auto }
 enum class TalkMode { Hold, HandsFree }
 enum class AudioOut { Earpiece, Speaker, BluetoothHeadset, Wired }
+enum class Role { None, Host, Joiner }
 
 @Immutable
 data class Member(
@@ -50,6 +51,15 @@ data class UiState(
     val sosArmed: Boolean = true,
     val needsPermissions: Boolean = true,
     val hasGroup: Boolean = false,
+
+    // M5 — connection lifecycle
+    val role: Role = Role.None,
+    val hotspotState: HotspotState = HotspotState.Idle,
+    val joinState: JoinState = JoinState.Disconnected,
+    val transportActive: Boolean = false,
+    val peerCount: Int = 0,
+    val joinSsid: String = "",
+    val joinPass: String = "",
 )
 
 class RidgeStore {
@@ -82,9 +92,10 @@ class RidgeStore {
     fun setGroupName(name: String) = _state.update { it.copy(groupName = name) }
     fun setGroupCode(code: String) = _state.update { it.copy(groupCode = code) }
 
-    fun startGroup(name: String) = _state.update {
+    fun startGroup(name: String, role: Role = Role.Host) = _state.update {
         it.copy(
             hasGroup = true,
+            role = role,
             groupName = name.trim().ifBlank { "Untitled group" },
             groupCode = (1000..9999).random().toString(),
             members = emptyList(),
@@ -96,12 +107,28 @@ class RidgeStore {
     fun leaveGroup() = _state.update {
         it.copy(
             hasGroup = false,
+            role = Role.None,
             groupName = "",
             members = emptyList(),
             transmitting = false,
             sosLive = false,
+            hotspotState = HotspotState.Idle,
+            joinState = JoinState.Disconnected,
+            transportActive = false,
+            peerCount = 0,
+            joinSsid = "",
+            joinPass = "",
         )
     }
+
+    fun setHotspotState(s: HotspotState) = _state.update { it.copy(hotspotState = s) }
+    fun setJoinState(s: JoinState) = _state.update { it.copy(joinState = s) }
+    fun setJoinTarget(ssid: String, pass: String) = _state.update {
+        it.copy(joinSsid = ssid, joinPass = pass)
+    }
+    fun setTransportActive(v: Boolean) = _state.update { it.copy(transportActive = v) }
+    fun setPeerCount(n: Int) = _state.update { it.copy(peerCount = n) }
+    fun setRole(r: Role) = _state.update { it.copy(role = r) }
 
     fun updateMembers(transform: (List<Member>) -> List<Member>) =
         _state.update { it.copy(members = transform(it.members)) }

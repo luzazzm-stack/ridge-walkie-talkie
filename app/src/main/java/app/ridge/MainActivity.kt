@@ -24,15 +24,23 @@ import androidx.core.content.ContextCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.lifecycleScope
 import app.ridge.core.AudioOut
 import app.ridge.core.AudioRouter
+import app.ridge.core.HotspotHost
+import app.ridge.core.HotspotState
+import app.ridge.core.JoinState
 import app.ridge.core.RadioService
 import app.ridge.core.RidgeStore
+import app.ridge.core.Role
 import app.ridge.core.TalkMode
+import app.ridge.core.WifiJoiner
 import app.ridge.ui.screens.AudioSheet
 import app.ridge.ui.screens.EmptyScreen
 import app.ridge.ui.screens.GroupSetupScreen
+import app.ridge.ui.screens.HostingSetupScreen
 import app.ridge.ui.screens.InviteScreen
+import app.ridge.ui.screens.JoinerConnectingScreen
 import app.ridge.ui.screens.NameGroupScreen
 import app.ridge.ui.screens.PermStatus
 import app.ridge.ui.screens.SettingsScreen
@@ -41,6 +49,8 @@ import app.ridge.ui.screens.SosScreen
 import app.ridge.ui.screens.SplashScreen
 import app.ridge.ui.screens.TalkScreen
 import app.ridge.ui.theme.RidgeTheme
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 
@@ -48,6 +58,8 @@ class MainActivity : ComponentActivity() {
 
     private val store get() = RidgeStore.Instance
     private lateinit var router: AudioRouter
+    private lateinit var hotspot: HotspotHost
+    private lateinit var joiner: WifiJoiner
 
     private val permLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -73,28 +85,43 @@ class MainActivity : ComponentActivity() {
         scannerLauncher.launch(opts)
     }
 
-    /** Parses "ridge:CODE|NAME" or plain digits. Returns code + optional name. */
-    private fun parseInvite(payload: String): Pair<String, String?> {
+    /** Parses a RIDGE invite payload.
+     *  Format:  ridge:CODE|NAME|SSID|PASS   (any trailing field can be missing) */
+    data class Invite(
+        val code: String,
+        val name: String?,
+        val ssid: String?,
+        val pass: String?,
+    )
+    private fun parseInvite(payload: String): Invite {
         val trimmed = payload.trim()
         if (trimmed.startsWith("ridge:", ignoreCase = true)) {
-            val body = trimmed.substringAfter(":")
-            val code = body.substringBefore("|")
-            val name = body.substringAfter("|", missingDelimiterValue = "").ifBlank { null }
-            return code.filter { it.isDigit() }.padStart(4, '0').take(4) to name
+            val parts = trimmed.substringAfter(":").split("|")
+            val code = parts.getOrNull(0).orEmpty().filter { it.isDigit() }.padStart(4, '0').take(4)
+            val name = parts.getOrNull(1)?.ifBlank { null }
+            val ssid = parts.getOrNull(2)?.ifBlank { null }
+            val pass = parts.getOrNull(3)?.ifBlank { null }
+            return Invite(code, name, ssid, pass)
         }
         val digits = trimmed.filter { it.isDigit() }
-        return digits.padStart(4, '0').take(4) to null
+        return Invite(digits.padStart(4, '0').take(4), null, null, null)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         router = AudioRouter(this)
+        hotspot = HotspotHost(this)
+        joiner = WifiJoiner(this)
 
         // Reflect device state into the store
         store.setBtHeadset(router.connectedBtHeadsetName(), null)
         if (router.isWiredPluggedIn()) {
             // keep wiredPluggedIn flag in sync (no direct setter, fold via state)
         }
+
+        // Mirror hotspot + joiner flows into the store so RadioService can react
+        hotspot.state.onEach { store.setHotspotState(it) }.launchIn(lifecycleScope)
+        joiner.state.onEach { store.setJoinState(it) }.launchIn(lifecycleScope)
 
         store.setNeedsPermissions(!allPermissionsGranted())
         if (!allPermissionsGranted()) {
@@ -214,35 +241,99 @@ class MainActivity : ComponentActivity() {
             composable("name-group") {
                 NameGroupScreen(
                     onStart = { name ->
-                        store.startGroup(name)
-                        nav.navigate("talk") {
+                        store.startGroup(name, role = Role.Host)
+                        hotspot.start()
+                        nav.navigate("hosting-setup") {
                             popUpTo("empty") { inclusive = false }
                         }
                     },
                     onBack = { nav.popBackStack() }
                 )
             }
-            composable("group-setup") {
-                GroupSetupScreen(
-                    onScanQr = {
-                        launchScanner { scanned ->
-                            // payload format: "ridge:CODE|NAME" or plain CODE
-                            val (code, name) = parseInvite(scanned)
-                            store.startGroup(name ?: "Joined group")
-                            store.setGroupCode(code)
-                            nav.navigate("talk") {
-                                popUpTo("empty") { inclusive = false }
-                            }
-                        }
-                    },
-                    onJoinWithCode = { code ->
-                        store.startGroup("Group $code")
-                        store.setGroupCode(code)
+            composable("hosting-setup") {
+                HostingSetupScreen(
+                    groupName = state.groupName,
+                    state = state.hotspotState,
+                    onRetry = { hotspot.start() },
+                    onManualSave = { ssid, pass -> hotspot.setManual(ssid, pass) },
+                    onContinue = {
                         nav.navigate("talk") {
                             popUpTo("empty") { inclusive = false }
                         }
                     },
+                    onCancel = {
+                        hotspot.stop()
+                        store.leaveGroup()
+                        nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
+                    },
+                )
+            }
+            composable("group-setup") {
+                GroupSetupScreen(
+                    onScanQr = {
+                        launchScanner { scanned ->
+                            val inv = parseInvite(scanned)
+                            store.startGroup(inv.name ?: "Joined group", role = Role.Joiner)
+                            store.setGroupCode(inv.code)
+                            if (inv.ssid != null && inv.pass != null) {
+                                store.setJoinTarget(inv.ssid, inv.pass)
+                                joiner.connect(inv.ssid, inv.pass)
+                                nav.navigate("joiner-connecting") {
+                                    popUpTo("empty") { inclusive = false }
+                                }
+                            } else {
+                                // Code-only join — no SSID/pass yet, go to manual
+                                nav.navigate("joiner-manual") {
+                                    popUpTo("empty") { inclusive = false }
+                                }
+                            }
+                        }
+                    },
+                    onJoinWithCode = { code ->
+                        store.startGroup("Group $code", role = Role.Joiner)
+                        store.setGroupCode(code)
+                        // No SSID/pass in code-only path — user types them in
+                        nav.navigate("joiner-manual") {
+                            popUpTo("empty") { inclusive = false }
+                        }
+                    },
                     onBack = { nav.popBackStack() }
+                )
+            }
+            composable("joiner-connecting") {
+                JoinerConnectingScreen(
+                    state = state.joinState,
+                    targetSsid = state.joinSsid,
+                    onRetry = { joiner.connect(state.joinSsid, state.joinPass) },
+                    onConnected = {
+                        nav.navigate("talk") {
+                            popUpTo("empty") { inclusive = false }
+                        }
+                    },
+                    onCancel = {
+                        joiner.disconnect()
+                        store.leaveGroup()
+                        nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
+                    },
+                )
+            }
+            composable("joiner-manual") {
+                HostingSetupScreen(
+                    groupName = state.groupName,
+                    state = HotspotState.ManualNeeded,
+                    onRetry = { /* not applicable in joiner-manual */ },
+                    onManualSave = { ssid, pass ->
+                        store.setJoinTarget(ssid, pass)
+                        joiner.connect(ssid, pass)
+                        nav.navigate("joiner-connecting") {
+                            popUpTo("empty") { inclusive = false }
+                        }
+                    },
+                    onContinue = { /* not used */ },
+                    onCancel = {
+                        store.leaveGroup()
+                        nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
+                    },
                 )
             }
             composable("talk") {
@@ -280,9 +371,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
             composable("invite") {
+                val ssidForQr = (state.hotspotState as? HotspotState.Active)?.ssid.orEmpty()
+                val passForQr = (state.hotspotState as? HotspotState.Active)?.passphrase.orEmpty()
                 InviteScreen(
                     groupName = state.groupName,
                     groupCode = state.groupCode,
+                    ssid = ssidForQr,
+                    pass = passForQr,
                     onBack = { nav.popBackStack() },
                 )
             }
@@ -313,6 +408,8 @@ class MainActivity : ComponentActivity() {
                 danger = true,
                 onConfirm = {
                     showLeaveConfirm = false
+                    hotspot.stop()
+                    joiner.disconnect()
                     store.leaveGroup()
                     nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
                 },

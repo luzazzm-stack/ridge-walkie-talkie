@@ -38,11 +38,17 @@ import app.ridge.ui.theme.RidgeTheme
 fun InviteScreen(
     groupName: String,
     groupCode: String,
+    ssid: String,
+    pass: String,
     onBack: () -> Unit,
 ) {
     val c = RidgeTheme.colors
     val ctx = LocalContext.current
-    val payload = "ridge:$groupCode|$groupName"
+    // ridge:CODE|NAME|SSID|PASS — joiner auto-connects to your hotspot
+    val payload = buildString {
+        append("ridge:").append(groupCode).append("|").append(groupName)
+        if (ssid.isNotBlank()) append("|").append(ssid).append("|").append(pass)
+    }
 
     Column(
         Modifier

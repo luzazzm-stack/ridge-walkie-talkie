@@ -197,7 +197,7 @@ fun TalkScreen(
             ) {
                 Column {
                     Text(
-                        "v0.4 · mic is live, transport is M5",
+                        if (state.transportActive) "v0.6 · voice link live" else "v0.6 · waiting for transport",
                         fontFamily = RidgeTheme.type.mono,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
@@ -205,7 +205,13 @@ fun TalkScreen(
                         color = c.hivisInk,
                     )
                     Text(
-                        "Hands-free opens the mic (even with screen off) and lights up the UI when you speak. Voice doesn't reach other phones yet — the UDP voice transport ships in M5.",
+                        if (state.transportActive) {
+                            "UDP voice over Wi-Fi is active. ${state.peerCount} peer${if (state.peerCount == 1) "" else "s"} connected. Press PTT to speak, or use Hands-free for VOX."
+                        } else if (state.role == app.ridge.core.Role.Host) {
+                            "Waiting for the local hotspot to come up. Allow Android's hotspot prompt if it asks."
+                        } else {
+                            "Waiting for the Wi-Fi connection to your group's host."
+                        },
                         fontFamily = RidgeTheme.type.mono,
                         fontSize = 11.sp,
                         lineHeight = 16.sp,
