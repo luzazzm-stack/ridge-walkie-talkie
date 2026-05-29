@@ -153,13 +153,14 @@ fun TalkScreen(
             Spacer(Modifier.height(12.dp))
             Divider2(modifier = Modifier.padding(horizontal = 18.dp))
 
-            // members — derived from the real transport peer count
-            val onlineCount = if (state.transportActive) state.peerCount else 0
+            // members — real names exchanged over the wire
+            val peerNames = if (state.transportActive) state.peerNames else emptyList()
+            val myLabel = state.myName.ifBlank { "You" }
             Row(
                 Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 11.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RidgeLabel("Members · ${onlineCount + 1}")  // +1 = you
+                RidgeLabel("Members · ${peerNames.size + 1}")  // +1 = you
                 Spacer(Modifier.weight(1f))
                 RidgeLabel(if (state.transmitting) "● ON AIR" else "LISTENING", color = c.hivisInk)
             }
@@ -167,18 +168,16 @@ fun TalkScreen(
             Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // "You" row — always present
                 MemberSimpleRow(
-                    name = "You",
+                    name = "$myLabel (you)",
                     sub = if (state.role == Role.Host) "host of ${state.groupName.ifBlank { "this group" }}" else "joined",
                     talking = state.transmitting,
                     isYou = true,
                 )
-                // connected peers
-                if (onlineCount > 0) {
-                    val peerLabel = if (state.role == Role.Host) "Member" else "Host"
-                    repeat(onlineCount) { i ->
+                // connected peers, by their transmitted names
+                if (peerNames.isNotEmpty()) {
+                    peerNames.forEach { pn ->
                         MemberSimpleRow(
-                            name = if (onlineCount == 1 && state.role != Role.Host) "Host"
-                                   else "$peerLabel ${i + 1}",
+                            name = pn.ifBlank { "Member" },
                             sub = "connected",
                             talking = false,
                             isYou = false,
@@ -220,7 +219,7 @@ fun TalkScreen(
             ) {
                 Column {
                     Text(
-                        if (state.transportActive) "v0.10 · voice link live" else "v0.10 · waiting to connect",
+                        if (state.transportActive) "v0.11 · voice link live" else "v0.11 · waiting to connect",
                         fontFamily = RidgeTheme.type.mono,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,

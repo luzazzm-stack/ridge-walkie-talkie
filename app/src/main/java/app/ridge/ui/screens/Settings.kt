@@ -4,8 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,20 +16,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ridge.core.UiState
 import app.ridge.ui.components.HazardTape
 import app.ridge.ui.components.RidgeCard
-import app.ridge.ui.components.RidgeChip
 import app.ridge.ui.components.RidgeToggle
 import app.ridge.ui.components.Segmented
 import app.ridge.ui.theme.RidgeTheme
@@ -42,16 +49,15 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLeaveGroup: () -> Unit,
     onStopApp: () -> Unit,
-    onTheme: (Int) -> Unit,         // 0=Day 1=Night 2=Auto
-    onQuality: (Float) -> Unit,
+    onSaveName: (String) -> Unit,
+    onTheme: (Int) -> Unit,         // 0=Day 1=Night
     onSos: (Boolean) -> Unit,
-    onSaver: (Int) -> Unit,
     onHaptic: (Boolean) -> Unit,
     onChime: (Boolean) -> Unit,
-    onBoost: (Boolean) -> Unit,
-    onBtRelay: (Boolean) -> Unit,
 ) {
     val c = RidgeTheme.colors
+    var name by remember(state.myName) { mutableStateOf(state.myName) }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -77,6 +83,78 @@ fun SettingsScreen(
                 color = c.ink,
             )
         }
+
+        // ── Your name ──
+        RidgeCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp)) {
+                Text(
+                    "Your name",
+                    fontFamily = RidgeTheme.type.display,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    color = c.ink,
+                )
+                Text(
+                    "Shown to others in the group.",
+                    fontFamily = RidgeTheme.type.mono,
+                    fontSize = 10.5.sp,
+                    color = c.muted,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        Modifier.weight(1f)
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(c.bone)
+                            .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp))
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                    ) {
+                        BasicTextField(
+                            value = name,
+                            onValueChange = { if (it.length <= 24) name = it },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                fontFamily = RidgeTheme.type.display,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp,
+                                color = c.ink,
+                            ),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { onSaveName(name) }),
+                            cursorBrush = SolidColor(c.hivis),
+                            decorationBox = { inner ->
+                                if (name.isEmpty()) Text(
+                                    "e.g. Pemba",
+                                    fontFamily = RidgeTheme.type.display,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 16.sp,
+                                    color = c.muted.copy(alpha = 0.5f),
+                                )
+                                inner()
+                            },
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(7.dp))
+                            .background(c.hivis)
+                            .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp))
+                            .clickable { onSaveName(name) }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    ) {
+                        Text(
+                            "SAVE",
+                            fontFamily = RidgeTheme.type.display,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp,
+                            color = Color.White,
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Current group + leave ──
         if (state.hasGroup) {
             RidgeCard(Modifier.fillMaxWidth()) {
                 Row(
@@ -85,12 +163,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            "Current group",
-                            fontFamily = RidgeTheme.type.mono,
-                            fontSize = 10.5.sp,
-                            color = c.muted,
-                        )
+                        Text("Current group", fontFamily = RidgeTheme.type.mono, fontSize = 10.5.sp, color = c.muted)
                         Text(
                             state.groupName.ifBlank { "Untitled" },
                             fontFamily = RidgeTheme.type.display,
@@ -98,12 +171,7 @@ fun SettingsScreen(
                             fontSize = 16.sp,
                             color = c.ink,
                         )
-                        Text(
-                            "code ${state.groupCode}",
-                            fontFamily = RidgeTheme.type.mono,
-                            fontSize = 10.5.sp,
-                            color = c.muted,
-                        )
+                        Text("code ${state.groupCode}", fontFamily = RidgeTheme.type.mono, fontSize = 10.5.sp, color = c.muted)
                     }
                     Box(
                         Modifier
@@ -113,92 +181,26 @@ fun SettingsScreen(
                             .clickable { onLeaveGroup() }
                             .padding(horizontal = 14.dp, vertical = 11.dp),
                     ) {
-                        Text(
-                            "LEAVE",
-                            fontFamily = RidgeTheme.type.display,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 13.sp,
-                            color = androidx.compose.ui.graphics.Color.White,
-                        )
+                        Text("LEAVE", fontFamily = RidgeTheme.type.display, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = Color.White)
                     }
                 }
             }
         }
 
-        // Wi-Fi voice quality slider
-        RidgeCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Wi-Fi voice quality",
-                        fontFamily = RidgeTheme.type.display,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 14.sp,
-                        color = c.ink,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    val tag = when {
-                        state.voiceQuality < 0.33f -> "RANGE"
-                        state.voiceQuality < 0.66f -> "BALANCED"
-                        else -> "CRISP"
-                    }
-                    RidgeChip(tag, color = c.hivisInk)
-                }
-                Spacer(Modifier.height(11.dp))
-                Slider(
-                    value = state.voiceQuality,
-                    onValueChange = onQuality,
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth()) {
-                    Text(
-                        "← MAX RANGE\n~100m · 16kbps",
-                        fontFamily = RidgeTheme.type.mono,
-                        fontSize = 10.sp,
-                        color = c.muted,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        "CRISP →\n~40m · HD voice",
-                        fontFamily = RidgeTheme.type.mono,
-                        fontSize = 10.sp,
-                        color = c.muted,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Box(Modifier.fillMaxWidth().height(2.dp).background(c.ink.copy(alpha = 0.12f)))
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "BT mode is fixed-bitrate — this slider only affects Wi-Fi.",
-                    fontFamily = RidgeTheme.type.mono,
-                    fontSize = 10.sp,
-                    color = c.muted,
-                )
-            }
-        }
-
-        // Panic SOS
+        // ── Panic SOS ──
         RidgeCard(Modifier.fillMaxWidth()) {
             Column {
                 HazardTape()
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(c.alarm)
-                    )
+                    Box(Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).background(c.alarm))
                     Spacer(Modifier.size(12.dp))
                     Column(Modifier.weight(1f)) {
+                        Text("Panic SOS", fontFamily = RidgeTheme.type.display, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = c.ink)
                         Text(
-                            "Panic SOS broadcast",
-                            fontFamily = RidgeTheme.type.display,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 14.sp,
-                            color = c.ink,
-                        )
-                        Text(
-                            "Hold power 3× · alerts all, shares last GPS",
+                            "Full-screen alert on your phone. (Network broadcast to others coming soon.)",
                             fontFamily = RidgeTheme.type.mono,
                             fontSize = 10.5.sp,
+                            lineHeight = 14.sp,
                             color = c.muted,
                         )
                     }
@@ -207,19 +209,13 @@ fun SettingsScreen(
             }
         }
 
-        // Theme
+        // ── Theme ──
         RidgeCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
-                Text(
-                    "Theme",
-                    fontFamily = RidgeTheme.type.display,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.sp,
-                    color = c.ink,
-                )
+                Text("Theme", fontFamily = RidgeTheme.type.display, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = c.ink)
                 Spacer(Modifier.height(10.dp))
                 Segmented(
-                    options = listOf("Day", "Night", "Auto"),
+                    options = listOf("Day", "Night"),
                     selectedIndex = if (state.night) 1 else 0,
                     onSelect = onTheme,
                 )
@@ -233,45 +229,16 @@ fun SettingsScreen(
             }
         }
 
-        // Auto battery saver
-        RidgeCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Auto battery saver",
-                        fontFamily = RidgeTheme.type.display,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 14.sp,
-                        color = c.ink,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    RidgeChip("AT ${state.saverThreshold}%", color = c.ink)
-                }
-                Spacer(Modifier.height(9.dp))
-                Segmented(
-                    options = listOf("OFF", "20%", "30%", "50%"),
-                    selectedIndex = when (state.saverThreshold) {
-                        0 -> 0; 20 -> 1; 30 -> 2; 50 -> 3; else -> 1
-                    },
-                    onSelect = { onSaver(listOf(0, 20, 30, 50)[it]) },
-                )
-            }
-        }
-
-        // misc toggles
+        // ── Toggles that actually do something ──
         RidgeCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
-                ToggleRow("Haptic on transmit", null, state.haptic, onHaptic)
+                ToggleRow("Haptic on transmit", "buzz when you start talking", state.haptic, onHaptic)
                 Divider(c.ink.copy(alpha = 0.12f))
                 ToggleRow("Talk-hint chime", "short beep before incoming voice", state.chime, onChime)
-                Divider(c.ink.copy(alpha = 0.12f))
-                ToggleRow("Voice quality boost", "Opus 24kbps · ~25% more battery", state.boost, onBoost)
-                Divider(c.ink.copy(alpha = 0.12f))
-                ToggleRow("Bluetooth relay fallback", null, state.btRelay, onBtRelay)
             }
         }
 
-        // Stop RIDGE completely — kills the background service + notification
+        // ── Stop RIDGE ──
         RidgeCard(Modifier.fillMaxWidth()) {
             Row(
                 Modifier.padding(14.dp),
@@ -279,13 +246,7 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        "Stop RIDGE",
-                        fontFamily = RidgeTheme.type.display,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 14.sp,
-                        color = c.ink,
-                    )
+                    Text("Stop RIDGE", fontFamily = RidgeTheme.type.display, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = c.ink)
                     Text(
                         "Quit the radio, stop the background service and remove the notification.",
                         fontFamily = RidgeTheme.type.mono,
@@ -302,13 +263,7 @@ fun SettingsScreen(
                         .clickable { onStopApp() }
                         .padding(horizontal = 16.dp, vertical = 11.dp),
                 ) {
-                    Text(
-                        "STOP",
-                        fontFamily = RidgeTheme.type.display,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 13.sp,
-                        color = c.bone,
-                    )
+                    Text("STOP", fontFamily = RidgeTheme.type.display, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, color = c.bone)
                 }
             }
         }
@@ -324,84 +279,14 @@ private fun ToggleRow(title: String, sub: String?, checked: Boolean, onChange: (
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                fontFamily = RidgeTheme.type.display,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.5.sp,
-                color = c.ink,
-            )
-            if (sub != null) Text(
-                sub,
-                fontFamily = RidgeTheme.type.mono,
-                fontSize = 10.5.sp,
-                color = c.muted,
-            )
+            Text(title, fontFamily = RidgeTheme.type.display, fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = c.ink)
+            if (sub != null) Text(sub, fontFamily = RidgeTheme.type.mono, fontSize = 10.5.sp, color = c.muted)
         }
         RidgeToggle(checked, onChange = onChange)
     }
 }
 
 @Composable
-private fun Divider(color: androidx.compose.ui.graphics.Color) {
+private fun Divider(color: Color) {
     Box(Modifier.fillMaxWidth().height(2.dp).background(color))
-}
-
-@Composable
-private fun Slider(value: Float, onValueChange: (Float) -> Unit) {
-    val c = RidgeTheme.colors
-    val frac = value.coerceIn(0f, 1f)
-    androidx.compose.foundation.layout.BoxWithConstraints(
-        Modifier
-            .fillMaxWidth()
-            .height(34.dp)
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    val f = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                    onValueChange(f)
-                }
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDrag = { change, _ ->
-                        val f = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
-                        onValueChange(f)
-                    }
-                )
-            },
-    ) {
-        val trackWidth = maxWidth
-        // track (background)
-        Box(
-            Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .height(14.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(c.bone)
-                .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(8.dp))
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth(frac)
-                    .height(14.dp)
-                    .background(c.hivis)
-            )
-        }
-        val knobOffset = (trackWidth * frac) - 15.dp
-        val safeOffset = when {
-            knobOffset < 0.dp -> 0.dp
-            knobOffset > trackWidth - 30.dp -> trackWidth - 30.dp
-            else -> knobOffset
-        }
-        Box(
-            Modifier
-                .padding(start = safeOffset)
-                .align(Alignment.CenterStart)
-                .size(30.dp)
-                .clip(RoundedCornerShape(50))
-                .background(c.ink)
-                .border(BorderStroke(3.dp, c.bone), RoundedCornerShape(50))
-        )
-    }
 }

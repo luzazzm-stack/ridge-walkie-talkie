@@ -63,9 +63,12 @@ class MainActivity : ComponentActivity() {
 
     private val permLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-            val allGranted = result.values.all { it }
-            store.setNeedsPermissions(!allGranted)
-            if (allGranted) startRadioService()
+            // Some OEMs return an empty map if they suppress the dialog — don't
+            // treat that as "all granted". Mic is the only hard requirement.
+            if (result.isEmpty()) { store.setNeedsPermissions(!micGranted()); return@registerForActivityResult }
+            val ok = micGranted()
+            store.setNeedsPermissions(!ok)
+            if (ok) startRadioService()
         }
 
     private var onScanResult: ((String) -> Unit)? = null
@@ -123,12 +126,17 @@ class MainActivity : ComponentActivity() {
         hotspot.state.onEach { store.setHotspotState(it) }.launchIn(lifecycleScope)
         joiner.state.onEach { store.setJoinState(it) }.launchIn(lifecycleScope)
 
-        store.setNeedsPermissions(!allPermissionsGranted())
-        if (!allPermissionsGranted()) {
-            // will be triggered when user taps Allow
-        } else {
-            startRadioService()
-        }
+        // Load saved display name (default to the phone model on first run)
+        val prefs = getSharedPreferences("ridge", MODE_PRIVATE)
+        val savedName = prefs.getString("my_name", null)
+            ?.takeIf { it.isNotBlank() }
+            ?: (Build.MODEL?.takeIf { it.isNotBlank() } ?: "Me")
+        store.setMyName(savedName)
+
+        // Mic is the only hard requirement; everything else is optional and
+        // must never trap the user on the splash screen.
+        store.setNeedsPermissions(!micGranted())
+        if (micGranted()) startRadioService()
 
         setContent {
             val state by store.state.collectAsState()
@@ -141,24 +149,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun allPermissionsGranted(): Boolean {
-        val required = mutableListOf(
-            Manifest.permission.RECORD_AUDIO,
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            required += Manifest.permission.BLUETOOTH_SCAN
-            required += Manifest.permission.BLUETOOTH_CONNECT
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            required += Manifest.permission.NEARBY_WIFI_DEVICES
-            required += Manifest.permission.POST_NOTIFICATIONS
-        } else {
-            required += Manifest.permission.ACCESS_FINE_LOCATION
-        }
-        return required.all { p ->
-            ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
-        }
-    }
+    /** The only permission that actually blocks the app from working. */
+    private fun micGranted(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
 
     private fun requestPermissions() {
         val list = mutableListOf(Manifest.permission.RECORD_AUDIO)
@@ -192,8 +186,27 @@ class MainActivity : ComponentActivity() {
 
     private fun startRadioService() {
         val i = Intent(this, RadioService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i)
-        else startService(i)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i)
+            else startService(i)
+        } catch (e: Throwable) {
+            // Android 12+ can reject a FGS start during the transient background
+            // window right after a permission dialog. Retry on the next frame.
+            window.decorView.postDelayed({
+                runCatching {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i)
+                    else startService(i)
+                }
+            }, 300)
+        }
+    }
+
+    private fun saveMyName(name: String) {
+        val clean = name.trim().take(24).ifBlank { "Me" }
+        store.setMyName(clean)
+        runCatching {
+            getSharedPreferences("ridge", MODE_PRIVATE).edit().putString("my_name", clean).apply()
+        }
     }
 
     private fun stopRadioAndQuit() {
@@ -207,11 +220,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Re-check perms after returning from Settings — user may have toggled manually.
-        val nowGranted = allPermissionsGranted()
-        if (nowGranted != !store.state.value.needsPermissions) {
-            store.setNeedsPermissions(!nowGranted)
-            if (nowGranted) startRadioService()
+        // Re-check mic after returning from Settings — user may have toggled it.
+        val ok = micGranted()
+        if (ok == store.state.value.needsPermissions) {  // state disagrees with reality
+            store.setNeedsPermissions(!ok)
+            if (ok) startRadioService()
         }
     }
 
@@ -227,10 +240,15 @@ class MainActivity : ComponentActivity() {
         var showSheet by remember { mutableStateOf(false) }
         var showLeaveConfirm by remember { mutableStateOf(false) }
 
-        val start = when {
-            state.needsPermissions -> "splash"
-            !state.hasGroup -> "empty"
-            else -> "talk"
+        // Compute the start destination ONCE — recomputing it every recomposition
+        // corrupts the NavHost back-stack (popUpTo("empty") on a stack that never
+        // had "empty"). Navigation between states is handled explicitly elsewhere.
+        val start = remember {
+            when {
+                store.state.value.needsPermissions -> "splash"
+                !store.state.value.hasGroup -> "empty"
+                else -> "talk"
+            }
         }
 
         Box(Modifier.fillMaxSize()) {
@@ -388,14 +406,11 @@ class MainActivity : ComponentActivity() {
                     onBack = { nav.popBackStack() },
                     onLeaveGroup = { showLeaveConfirm = true },
                     onStopApp = { stopRadioAndQuit() },
+                    onSaveName = { saveMyName(it) },
                     onTheme = { store.setNight(it == 1) },
-                    onQuality = { store.setVoiceQuality(it) },
                     onSos = { store.setSosArmed(it) },
-                    onSaver = { store.setSaverThreshold(it) },
                     onHaptic = { store.setHaptic(it) },
                     onChime = { store.setChime(it) },
-                    onBoost = { store.setBoost(it) },
-                    onBtRelay = { store.setBtRelay(it) },
                 )
             }
         }

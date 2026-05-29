@@ -12,38 +12,35 @@ class AudioRouter(private val ctx: Context) {
 
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
+    /**
+     * Audio plays via an AudioTrack with USAGE_MEDIA (see VoiceTransport), which
+     * routes automatically: loudspeaker by default, A2DP when a Bluetooth headset
+     * is connected, wired headset when plugged. We therefore DON'T force
+     * MODE_IN_COMMUNICATION (that fights the media stream and silenced playback
+     * on many OEMs). For a mono Bluetooth headset we optionally start SCO, guarded
+     * by the runtime permission. Speaker/Earpiece/Wired need no action here.
+     */
     fun apply(target: AudioOut) {
-        // Pre-S APIs are sufficient for the common phone outputs we care about
-        am.mode = AudioManager.MODE_IN_COMMUNICATION
         when (target) {
-            AudioOut.Speaker -> {
-                am.isSpeakerphoneOn = true
-                am.stopBluetoothSco()
-                am.isBluetoothScoOn = false
+            AudioOut.BluetoothHeadset -> if (hasBtConnect()) {
+                runCatching { am.startBluetoothSco(); am.isBluetoothScoOn = true }
             }
-            AudioOut.Earpiece -> {
-                am.isSpeakerphoneOn = false
-                am.stopBluetoothSco()
-                am.isBluetoothScoOn = false
-            }
-            AudioOut.BluetoothHeadset -> {
-                am.isSpeakerphoneOn = false
-                am.startBluetoothSco()
-                am.isBluetoothScoOn = true
-            }
-            AudioOut.Wired -> {
-                am.isSpeakerphoneOn = false
-                am.stopBluetoothSco()
-                am.isBluetoothScoOn = false
+            else -> runCatching {
+                if (am.isBluetoothScoOn) { am.stopBluetoothSco(); am.isBluetoothScoOn = false }
             }
         }
     }
 
     fun release() {
-        runCatching { am.stopBluetoothSco() }
-        am.isBluetoothScoOn = false
-        am.isSpeakerphoneOn = false
-        am.mode = AudioManager.MODE_NORMAL
+        runCatching { if (am.isBluetoothScoOn) am.stopBluetoothSco() }
+        runCatching { am.isBluetoothScoOn = false }
+    }
+
+    private fun hasBtConnect(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return true
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+            ctx, android.Manifest.permission.BLUETOOTH_CONNECT
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
     fun isWiredPluggedIn(): Boolean {

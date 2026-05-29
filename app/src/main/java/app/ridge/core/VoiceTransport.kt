@@ -26,37 +26,40 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.sqrt
 
 /**
- * UDP voice transport.
+ * UDP voice transport with a tiny typed-packet protocol.
  *
- *  - Host mode: opens UDP server on [PORT]; relays packets between clients.
- *  - Client mode: sends/receives to the host IP on the joined Wi-Fi network.
+ * Packet = [1 type byte][payload]:
+ *   - TYPE_AUDIO (0): payload is raw 16-bit PCM @ 16 kHz mono, ~20 ms frame
+ *   - TYPE_HELLO (1): payload is the sender's UTF-8 display name
  *
- * One AudioRecord opens per session. PTT-Hold or hands-free VOX both drive
- * "should we send right now?" through this same mic, so we never conflict.
- *
- * Audio: raw 16-bit signed PCM @ 16 kHz mono, ~20ms frames. No codec yet —
- * verify the link first, optimize bandwidth in a later milestone.
+ * Host mode: opens UDP server on [PORT]; relays audio between clients and
+ * learns each peer's name from their HELLO. Replies to each HELLO with its
+ * own HELLO so clients learn the host's name.
+ * Client mode: sends HELLO (name) to host every ~1.5 s; sends/plays audio.
  */
 class VoiceTransport(
     private val ctx: Context,
     private val onLevel: (Float) -> Unit,
     private val onActiveChanged: (Boolean) -> Unit,
-    private val onPeerCount: (Int) -> Unit,
+    private val onPeers: (List<String>) -> Unit,
     private val onError: (String) -> Unit,
     private val onStats: (txPackets: Long, rxPackets: Long) -> Unit = { _, _ -> },
+    private val onIncomingStart: () -> Unit = {},
 ) {
 
     enum class Mode { Host, Client }
 
-    /** A peer is identified by IP + the source port we actually heard from. */
-    private data class Peer(val ip: InetAddress, val port: Int)
+    private data class Peer(val ip: InetAddress, val port: Int, var name: String)
+
+    @Volatile private var myName: String = "Me"
+    fun setMyName(name: String) { myName = name.ifBlank { "Me" } }
 
     private val _active = MutableStateFlow(false)
     val active: StateFlow<Boolean> = _active.asStateFlow()
 
     private val running = AtomicBoolean(false)
-    private val voxEnabled = AtomicBoolean(false)   // true → send when RMS > threshold
-    private val holdPressed = AtomicBoolean(false)  // true → send while pressed
+    private val voxEnabled = AtomicBoolean(false)
+    private val holdPressed = AtomicBoolean(false)
     private var sender: Thread? = null
     private var receiver: Thread? = null
     private var statsThread: Thread? = null
@@ -66,7 +69,8 @@ class VoiceTransport(
     private var mode: Mode? = null
     private var hostAddr: InetAddress? = null
     private var hostPort: Int = PORT
-    private val peers = Collections.synchronizedSet(mutableSetOf<Peer>())
+    private var hostName: String = "Host"
+    private val peers = Collections.synchronizedSet(LinkedHashSet<Peer>())
 
     private val txPackets = AtomicLong(0)
     private val rxPackets = AtomicLong(0)
@@ -83,6 +87,7 @@ class VoiceTransport(
             socket = s
         }.onFailure { onError("host bind: ${it.message}"); return }
         startThreads()
+        emitPeers()
     }
 
     fun startClient(hostIp: String, network: Network?) {
@@ -94,12 +99,13 @@ class VoiceTransport(
             hostPort = PORT
             val s = DatagramSocket(null)
             network?.bindSocket(s)
-            s.bind(null) // ephemeral local port, but bound to the Wi-Fi network
+            s.bind(null)
             socket = s
         }.onFailure { onError("client connect: ${it.message}"); return }
         startThreads()
-        // We are connected to exactly one host — show it as a peer right away.
-        onPeerCount(1)
+        // Connected to exactly one host — show it immediately (name fills in on reply).
+        hostName = "Host"
+        emitPeers()
     }
 
     fun stop() {
@@ -113,21 +119,26 @@ class VoiceTransport(
         runCatching { socket?.close() }
         socket = null
         peers.clear()
-        onPeerCount(0)
+        onPeers(emptyList())
         onActiveChanged(false)
         onLevel(0f)
         _active.value = false
     }
 
-    /** Hands-free / VOX: keep mic open, send when RMS over threshold. */
     fun setVoxEnabled(on: Boolean) { voxEnabled.set(on) }
-
-    /** PTT Hold: caller flips on press / off on release. */
     fun setHoldPressed(on: Boolean) { holdPressed.set(on) }
 
     private fun resetStats() {
         txPackets.set(0); rxPackets.set(0)
         onStats(0, 0)
+    }
+
+    private fun emitPeers() {
+        when (mode) {
+            Mode.Host -> onPeers(peers.toList().map { it.name })
+            Mode.Client -> onPeers(listOf(hostName))
+            else -> onPeers(emptyList())
+        }
     }
 
     private fun startThreads() {
@@ -148,17 +159,37 @@ class VoiceTransport(
         }
     }
 
-    /** Client announces itself to the host every ~1.5s so the host registers
+    /** Client announces its name to the host every ~1.5 s so the host registers
      *  it (and re-registers after any drop) even if early hellos were lost. */
     private fun keepAliveLoop() {
-        val hello = byteArrayOf(0)
         while (running.get()) {
-            val s = socket
-            val addr = hostAddr
-            if (s != null && addr != null) {
-                runCatching { s.send(DatagramPacket(hello, hello.size, addr, hostPort)) }
-            }
+            sendHello()
             runCatching { Thread.sleep(1500) }.getOrElse { return }
+        }
+    }
+
+    private fun helloPacket(): ByteArray {
+        val nameBytes = myName.toByteArray(Charsets.UTF_8).take(80).toByteArray()
+        return ByteArray(nameBytes.size + 1).also {
+            it[0] = TYPE_HELLO
+            System.arraycopy(nameBytes, 0, it, 1, nameBytes.size)
+        }
+    }
+
+    private fun sendHello() {
+        val s = socket ?: return
+        val pkt = helloPacket()
+        when (mode) {
+            Mode.Client -> {
+                val addr = hostAddr ?: return
+                runCatching { s.send(DatagramPacket(pkt, pkt.size, addr, hostPort)) }
+            }
+            Mode.Host -> {
+                for (p in peers.toSet()) {
+                    runCatching { s.send(DatagramPacket(pkt, pkt.size, p.ip, p.port)) }
+                }
+            }
+            else -> Unit
         }
     }
 
@@ -166,28 +197,58 @@ class VoiceTransport(
         val s = socket ?: return
         val buf = ByteArray(MAX_PACKET)
         val track = newTrack()
+        var lastAudioMs = 0L
         try {
             track.play()
             while (running.get()) {
                 val pkt = DatagramPacket(buf, buf.size)
                 runCatching { s.receive(pkt) }.getOrNull() ?: continue
                 rxPackets.incrementAndGet()
-                val src = pkt.address
-                if (src != null && mode == Mode.Host) {
-                    // Learn this peer by IP + the source port we actually heard.
-                    if (peers.add(Peer(src, pkt.port))) onPeerCount(peers.size)
-                    // Relay to all OTHER peers, each at their real source port.
-                    val out = pkt.data.copyOfRange(0, pkt.length)
-                    for (p in peers.toSet()) {
-                        if (p.ip != src || p.port != pkt.port) runCatching {
-                            s.send(DatagramPacket(out, out.size, p.ip, p.port))
-                            txPackets.incrementAndGet()
+                val len = pkt.length
+                if (len < 1) continue
+                val type = buf[0]
+                val src = pkt.address ?: continue
+
+                when (type) {
+                    TYPE_HELLO -> {
+                        val name = if (len > 1) String(buf, 1, len - 1, Charsets.UTF_8).trim() else ""
+                        if (mode == Mode.Host) {
+                            val existing = peers.firstOrNull { it.ip == src && it.port == pkt.port }
+                            if (existing == null) {
+                                peers.add(Peer(src, pkt.port, name.ifBlank { "Member" }))
+                                // greet back so the client learns the host's name
+                                runCatching { s.send(DatagramPacket(helloPacket(), helloPacket().size, src, pkt.port)) }
+                            } else if (name.isNotBlank() && existing.name != name) {
+                                existing.name = name
+                            }
+                            emitPeers()
+                        } else if (mode == Mode.Client) {
+                            if (name.isNotBlank() && name != hostName) {
+                                hostName = name
+                                emitPeers()
+                            }
                         }
                     }
-                }
-                // play locally (skip the 1-byte hello)
-                if (pkt.length > 1) {
-                    runCatching { track.write(pkt.data, 0, pkt.length) }
+                    TYPE_AUDIO -> {
+                        if (mode == Mode.Host) {
+                            // relay to all OTHER peers (preserve type byte)
+                            val out = pkt.data.copyOfRange(0, len)
+                            for (p in peers.toSet()) {
+                                if (p.ip != src || p.port != pkt.port) runCatching {
+                                    s.send(DatagramPacket(out, out.size, p.ip, p.port))
+                                    txPackets.incrementAndGet()
+                                }
+                            }
+                        }
+                        // play payload (skip the type byte)
+                        if (len > 1) {
+                            // chime hook: a fresh transmission after >800 ms gap
+                            val now = System.currentTimeMillis()
+                            if (now - lastAudioMs > 800) runCatching { onIncomingStart() }
+                            lastAudioMs = now
+                            runCatching { track.write(buf, 1, len - 1) }
+                        }
+                    }
                 }
             }
         } catch (_: Throwable) {
@@ -202,8 +263,6 @@ class VoiceTransport(
         if (!hasMic()) { onError("mic permission missing"); return }
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) { onError("AudioRecord minBuf"); return }
-        // Plain MIC source — reliably captures on every OEM in MODE_NORMAL,
-        // unlike VOICE_COMMUNICATION which can return silence without a call.
         val rec = try {
             AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
         } catch (t: Throwable) {
@@ -212,7 +271,6 @@ class VoiceTransport(
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release(); onError("AudioRecord uninitialized"); return
         }
-        // Best-effort echo + noise reduction so loudspeaker use doesn't howl.
         val aec = runCatching {
             if (AcousticEchoCanceler.isAvailable())
                 AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true } else null
@@ -221,25 +279,23 @@ class VoiceTransport(
             if (NoiseSuppressor.isAvailable())
                 NoiseSuppressor.create(rec.audioSessionId)?.apply { enabled = true } else null
         }.getOrNull()
-        val buf = ByteArray(FRAME_BYTES)
+        val pcm = ByteArray(FRAME_BYTES)
+        val out = ByteArray(FRAME_BYTES + 1)  // [type][pcm]
+        out[0] = TYPE_AUDIO
         var lastActive = false
         var aboveCount = 0
         var belowCount = 0
-        val onThresh = VOX_ON
-        val offThresh = VOX_OFF
         try {
             rec.startRecording()
             while (running.get()) {
-                val n = rec.read(buf, 0, buf.size)
+                val n = rec.read(pcm, 0, pcm.size)
                 if (n <= 0) { Thread.sleep(10); continue }
 
-                // RMS for level meter
-                val rms = computeRms(buf, n)
+                val rms = computeRms(pcm, n)
                 onLevel(rms)
 
-                // decide: PTT hold or VOX
                 val voxActive = if (voxEnabled.get()) {
-                    val limit = if (lastActive) offThresh else onThresh
+                    val limit = if (lastActive) VOX_OFF else VOX_ON
                     if (rms >= limit) { aboveCount++; belowCount = 0 } else { belowCount++; aboveCount = 0 }
                     when {
                         !lastActive && aboveCount >= 3 -> true
@@ -253,7 +309,10 @@ class VoiceTransport(
                     lastActive = nowActive
                     onActiveChanged(nowActive)
                 }
-                if (nowActive) sendBytes(buf, n)
+                if (nowActive) {
+                    System.arraycopy(pcm, 0, out, 1, n)
+                    sendAudio(out, n + 1)
+                }
             }
         } catch (_: Throwable) {
         } finally {
@@ -277,7 +336,7 @@ class VoiceTransport(
         return (sqrt(sumSq / samples) / Short.MAX_VALUE.toDouble()).toFloat().coerceIn(0f, 1f)
     }
 
-    private fun sendBytes(data: ByteArray, len: Int) {
+    private fun sendAudio(data: ByteArray, len: Int) {
         val s = socket ?: return
         val out = if (len == data.size) data else data.copyOf(len)
         when (mode) {
@@ -301,8 +360,6 @@ class VoiceTransport(
     }
 
     private fun newTrack(): AudioTrack {
-        // MEDIA usage → plays on the loud media stream, routes to loudspeaker
-        // (or A2DP Bluetooth automatically). MODE_NORMAL friendly, audible.
         val attrs = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -330,5 +387,7 @@ class VoiceTransport(
         const val MAX_PACKET = 1500
         const val VOX_ON = 0.07f
         const val VOX_OFF = 0.04f
+        const val TYPE_AUDIO: Byte = 0
+        const val TYPE_HELLO: Byte = 1
     }
 }

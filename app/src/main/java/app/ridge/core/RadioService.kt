@@ -27,7 +27,6 @@ class RadioService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private lateinit var router: AudioRouter
-    private lateinit var discovery: Discovery
     private lateinit var vox: VoxRecorder
     private lateinit var transport: VoiceTransport
     private val store get() = RidgeStore.Instance
@@ -43,7 +42,6 @@ class RadioService : Service() {
     override fun onCreate() {
         super.onCreate()
         router = AudioRouter(this)
-        discovery = Discovery(this)
         vox = VoxRecorder(
             ctx = this,
             onLevel = { lvl -> store.setVoxLevel((lvl * 100).toInt()) },
@@ -57,21 +55,26 @@ class RadioService : Service() {
             onLevel = { lvl -> store.setVoxLevel((lvl * 100).toInt()) },
             onActiveChanged = { active ->
                 store.setTransmitting(active)
+                if (active && store.state.value.haptic) buzz()
                 updateNotif()
             },
-            onPeerCount = { n -> store.setPeerCount(n); updateNotif() },
+            onPeers = { names -> store.setPeers(names); updateNotif() },
             onError = { e -> store.setLastError(e) },
             onStats = { tx, rx -> store.setStats(tx, rx) },
+            onIncomingStart = { if (store.state.value.chime) chime() },
         )
         startForegroundTyped()
-        discovery.start()
         observeLifecycle()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            // User asked to fully stop the radio.
+            // User asked to fully stop the radio. Tear down cleanly, then quit.
+            runCatching { transport.stop() }
+            runCatching { vox.stop() }
+            exitCommunicationAudio()
             store.leaveGroup()
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -127,8 +130,9 @@ class RadioService : Service() {
                         if (wantTransport && !transportRunning) {
                             // hand mic over from preview VOX, give it a moment to release
                             vox.stop()
-                            Thread.sleep(120)
+                            kotlinx.coroutines.delay(150)
                             enterCommunicationAudio()
+                            transport.setMyName(store.state.value.myName.ifBlank { deviceName() })
                             when (trig.role) {
                                 Role.Host -> transport.startHost(network = null)
                                 Role.Joiner -> transport.startClient(
@@ -235,8 +239,40 @@ class RadioService : Service() {
     }
 
     private fun updateNotif() {
-        val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-        nm.notify(NOTIF_ID, buildNotif())
+        runCatching {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+            nm.notify(NOTIF_ID, buildNotif())
+        }
+    }
+
+    private fun deviceName(): String =
+        android.os.Build.MODEL?.takeIf { it.isNotBlank() } ?: "Member"
+
+    private fun buzz() {
+        runCatching {
+            val v = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (getSystemService(VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager).defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(VIBRATOR_SERVICE) as android.os.Vibrator
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                v.vibrate(android.os.VibrationEffect.createOneShot(40, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION") v.vibrate(40)
+            }
+        }
+    }
+
+    private fun chime() {
+        runCatching {
+            val tg = android.media.ToneGenerator(
+                android.media.AudioManager.STREAM_MUSIC, 80
+            )
+            tg.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 150)
+            // release shortly after the tone finishes
+            android.os.Handler(mainLooper).postDelayed({ runCatching { tg.release() } }, 400)
+        }
     }
 
     private fun buildNotif(): Notification {
@@ -281,7 +317,6 @@ class RadioService : Service() {
         supervisor.cancel()
         runCatching { transport.stop() }
         runCatching { vox.stop() }
-        runCatching { discovery.stop() }
         exitCommunicationAudio()
         runCatching { router.release() }
         releaseWake()
