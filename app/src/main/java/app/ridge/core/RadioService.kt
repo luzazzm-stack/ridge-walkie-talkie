@@ -201,13 +201,21 @@ class RadioService : Service() {
 
     private fun enterCommunicationAudio() {
         if (audioModeActive) return
-        runCatching { router.apply(store.state.value.audioOut) }
+        // Media-stream playback works in MODE_NORMAL; don't force telephony mode.
+        // Just make sure the media volume isn't sitting at zero.
+        runCatching {
+            val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+            val max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+            val cur = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+            if (cur < max / 2) {
+                am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, (max * 0.8).toInt(), 0)
+            }
+        }
         audioModeActive = true
     }
 
     private fun exitCommunicationAudio() {
         if (!audioModeActive) return
-        runCatching { router.release() }
         audioModeActive = false
     }
 

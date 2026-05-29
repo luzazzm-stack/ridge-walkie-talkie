@@ -10,6 +10,8 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import android.net.Network
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -200,14 +202,25 @@ class VoiceTransport(
         if (!hasMic()) { onError("mic permission missing"); return }
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) { onError("AudioRecord minBuf"); return }
+        // Plain MIC source — reliably captures on every OEM in MODE_NORMAL,
+        // unlike VOICE_COMMUNICATION which can return silence without a call.
         val rec = try {
-            AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
+            AudioRecord(MediaRecorder.AudioSource.MIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2)
         } catch (t: Throwable) {
             onError("AudioRecord ctor: ${t.message}"); return
         }
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release(); onError("AudioRecord uninitialized"); return
         }
+        // Best-effort echo + noise reduction so loudspeaker use doesn't howl.
+        val aec = runCatching {
+            if (AcousticEchoCanceler.isAvailable())
+                AcousticEchoCanceler.create(rec.audioSessionId)?.apply { enabled = true } else null
+        }.getOrNull()
+        val ns = runCatching {
+            if (NoiseSuppressor.isAvailable())
+                NoiseSuppressor.create(rec.audioSessionId)?.apply { enabled = true } else null
+        }.getOrNull()
         val buf = ByteArray(FRAME_BYTES)
         var lastActive = false
         var aboveCount = 0
@@ -244,6 +257,8 @@ class VoiceTransport(
             }
         } catch (_: Throwable) {
         } finally {
+            runCatching { aec?.release() }
+            runCatching { ns?.release() }
             runCatching { rec.stop() }
             runCatching { rec.release() }
         }
@@ -286,8 +301,10 @@ class VoiceTransport(
     }
 
     private fun newTrack(): AudioTrack {
+        // MEDIA usage → plays on the loud media stream, routes to loudspeaker
+        // (or A2DP Bluetooth automatically). MODE_NORMAL friendly, audible.
         val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build()
         val fmt = AudioFormat.Builder()
@@ -296,7 +313,9 @@ class VoiceTransport(
             .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
             .build()
         val minBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        return AudioTrack(attrs, fmt, minBuf * 4, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE)
+        return AudioTrack(attrs, fmt, minBuf * 4, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE).apply {
+            runCatching { setVolume(AudioTrack.getMaxVolume()) }
+        }
     }
 
     private fun hasMic(): Boolean = ContextCompat.checkSelfPermission(
