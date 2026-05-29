@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,8 @@ import app.ridge.ui.theme.RidgeTheme
 fun EmptyScreen(
     onStart: () -> Unit,
     onJoin: () -> Unit,
+    micTestActive: Boolean = false,
+    onMicTest: () -> Unit = {},
 ) {
     val c = RidgeTheme.colors
 
@@ -89,12 +92,18 @@ fun EmptyScreen(
         Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
             RidgePrimaryButton("+ Start a group", onClick = onStart, minHeight = 60.dp, fontSize = 16.sp)
             RidgeGhostButton("Join with code or QR", onClick = onJoin, minHeight = 60.dp)
+            // Single-device audio self-test
             Text(
-                "Scanning for nearby groups…",
+                if (micTestActive) "● Listening — speak, you should hear yourself"
+                else "Test mic & speaker (tap, then talk)",
                 fontFamily = RidgeTheme.type.mono,
                 fontSize = 11.sp,
-                color = c.muted,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                fontWeight = FontWeight.Bold,
+                color = if (micTestActive) c.hivisInk else c.muted,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .clickable { onMicTest() },
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
         }

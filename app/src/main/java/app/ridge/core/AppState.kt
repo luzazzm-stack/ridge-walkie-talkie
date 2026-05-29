@@ -65,6 +65,9 @@ data class UiState(
     // v0.11 — identity
     val myName: String = "",
 
+    // v0.11.3 — single-device mic/speaker self-test
+    val micTestActive: Boolean = false,
+
     // v0.10 — diagnostics
     val txPackets: Long = 0,
     val rxPackets: Long = 0,
@@ -145,6 +148,7 @@ class RidgeStore {
     fun setStats(tx: Long, rx: Long) = _state.update { it.copy(txPackets = tx, rxPackets = rx) }
     fun setLastError(e: String) = _state.update { it.copy(lastError = e) }
     fun setMyName(name: String) = _state.update { it.copy(myName = name) }
+    fun setMicTestActive(v: Boolean) = _state.update { it.copy(micTestActive = v) }
 
     fun updateMembers(transform: (List<Member>) -> List<Member>) =
         _state.update { it.copy(members = transform(it.members)) }

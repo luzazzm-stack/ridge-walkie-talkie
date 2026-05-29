@@ -60,6 +60,18 @@ class MainActivity : ComponentActivity() {
     private lateinit var router: AudioRouter
     private lateinit var hotspot: HotspotHost
     private lateinit var joiner: WifiJoiner
+    private val loopback by lazy { app.ridge.core.AudioLoopback(this, onError = { store.setLastError(it) }) }
+
+    private fun toggleMicTest() {
+        if (loopback.isRunning()) {
+            loopback.stop(); store.setMicTestActive(false)
+        } else {
+            store.setMicTestActive(true)
+            loopback.start(durationMs = 8000) {
+                runOnUiThread { store.setMicTestActive(false) }
+            }
+        }
+    }
 
     private val permLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -249,6 +261,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        runCatching { loopback.stop() }
         runCatching { router.release() }
     }
 
@@ -288,7 +301,9 @@ class MainActivity : ComponentActivity() {
             composable("empty") {
                 EmptyScreen(
                     onStart = { nav.navigate("name-group") },
-                    onJoin = { nav.navigate("group-setup") }
+                    onJoin = { nav.navigate("group-setup") },
+                    micTestActive = state.micTestActive,
+                    onMicTest = { toggleMicTest() },
                 )
             }
             composable("name-group") {
