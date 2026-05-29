@@ -58,6 +58,7 @@ fun JoinerConnectingScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 22.dp, vertical = 18.dp),
     ) {
+        // header
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(
                 Modifier.size(38.dp).clip(RoundedCornerShape(8.dp))
@@ -78,7 +79,7 @@ fun JoinerConnectingScreen(
 
         Spacer(Modifier.height(20.dp))
 
-        // What to join
+        // What to look for
         if (targetSsid.isNotBlank()) {
             RidgeCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
@@ -108,77 +109,79 @@ fun JoinerConnectingScreen(
             Spacer(Modifier.height(16.dp))
         }
 
-        // 3-step instructions
+        // 3 steps
         RidgeCard(Modifier.fillMaxWidth()) {
             Column {
                 HazardTape()
                 Column(Modifier.padding(16.dp)) {
-                    StepRow(num = "1", title = "Open Wi-Fi settings",
-                            body = "Tap below. RIDGE will hand off to Android's Wi-Fi screen.")
+                    StepRow("1", "Open Wi-Fi settings",
+                            "Tap the orange button below — Android Wi-Fi screen opens.")
                     Spacer(Modifier.height(10.dp))
-                    StepRow(num = "2", title = "Tap the host's hotspot",
-                            body = if (targetSsid.isNotBlank()) "Look for \"$targetSsid\" in the list. Type the password above when asked." else "Pick the hotspot your friend turned on. Type its password.")
+                    StepRow("2", "Tap the host's hotspot",
+                            if (targetSsid.isNotBlank())
+                                "Look for \"$targetSsid\" in the list. Tap → type the password above."
+                            else "Pick the hotspot your friend turned on. Type its password.")
                     Spacer(Modifier.height(10.dp))
-                    StepRow(num = "3", title = "Come back and tap Try connecting",
-                            body = "Android will warn that the network has no internet — tap \"Keep using this network\" or similar. Then return to RIDGE.")
+                    StepRow("3", "Come back, tap Try connecting",
+                            "Android will say the network has no internet — tap \"Keep using\" or \"Connect anyway\". Return to RIDGE, then the grey button.")
                 }
             }
         }
 
         Spacer(Modifier.height(18.dp))
 
+        // STATE BLOCK
         when (state) {
-            is JoinState.Failed -> {
-                Text(
-                    "✗ ${state.reason}",
-                    fontFamily = RidgeTheme.type.mono,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = c.alarm,
-                )
+            is JoinState.Disconnected -> { /* nothing shown, just the buttons below */ }
+            is JoinState.Connecting -> {
+                StatusLine(color = c.beacon, label = "CHECKING…", body = "Looking for your Wi-Fi gateway.")
                 Spacer(Modifier.height(12.dp))
             }
             is JoinState.Connected -> {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(c.field))
-                    Spacer(Modifier.size(8.dp))
-                    Text(
-                        "CONNECTED — opening channel…",
-                        fontFamily = RidgeTheme.type.mono,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        letterSpacing = 1.0.sp,
-                        color = c.field,
-                    )
+                StatusLine(
+                    color = c.field,
+                    label = "CONNECTED — opening channel…",
+                    body = "Gateway ${state.gatewayIp}",
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            is JoinState.Failed -> {
+                StatusLine(
+                    color = c.alarm,
+                    label = "NOT CONNECTED",
+                    body = state.reason,
+                )
+                if (state.diagnostics.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    RidgeCard(Modifier.fillMaxWidth(), bg = c.paper) {
+                        Column(Modifier.padding(12.dp)) {
+                            RidgeLabel("What RIDGE saw")
+                            Spacer(Modifier.height(4.dp))
+                            state.diagnostics.forEach { d ->
+                                Text(
+                                    "· $d",
+                                    fontFamily = RidgeTheme.type.mono,
+                                    fontSize = 10.5.sp,
+                                    color = c.muted,
+                                )
+                            }
+                        }
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Gateway: ${state.gatewayIp}",
-                    fontFamily = RidgeTheme.type.mono,
-                    fontSize = 10.5.sp,
-                    color = c.muted,
-                )
                 Spacer(Modifier.height(12.dp))
             }
-            is JoinState.Connecting -> {
-                Text(
-                    "Checking… looking for the host's gateway.",
-                    fontFamily = RidgeTheme.type.mono,
-                    fontSize = 11.5.sp,
-                    color = c.muted,
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-            else -> {}
         }
 
         // Action buttons
         RidgePrimaryButton("Open Wi-Fi settings", onClick = onOpenWifiSettings)
         Spacer(Modifier.height(10.dp))
-        RidgeGhostButton("Try connecting", onClick = onTryConnect)
+        RidgeGhostButton(
+            if (state is JoinState.Failed) "Try again" else "Try connecting",
+            onClick = onTryConnect,
+        )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Tap Open Wi-Fi settings first. Once you've joined the host's hotspot, come back and tap Try connecting.",
+            "Step 1: tap Open Wi-Fi settings to join the hotspot. Step 2: come back and tap Try connecting.",
             fontFamily = RidgeTheme.type.mono,
             fontSize = 10.5.sp,
             lineHeight = 14.sp,
@@ -190,6 +193,31 @@ fun JoinerConnectingScreen(
         Spacer(Modifier.weight(1f))
         RidgeGhostButton("Cancel", onClick = onCancel)
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun StatusLine(color: androidx.compose.ui.graphics.Color, label: String, body: String) {
+    val c = RidgeTheme.colors
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(color))
+        Column {
+            Text(
+                label,
+                fontFamily = RidgeTheme.type.mono,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                letterSpacing = 1.0.sp,
+                color = color,
+            )
+            Text(
+                body,
+                fontFamily = RidgeTheme.type.mono,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = c.ink,
+            )
+        }
     }
 }
 

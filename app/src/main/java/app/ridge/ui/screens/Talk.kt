@@ -200,7 +200,7 @@ fun TalkScreen(
             ) {
                 Column {
                     Text(
-                        if (state.transportActive) "v0.8 · voice link live" else "v0.8 · waiting to connect",
+                        if (state.transportActive) "v0.9 · voice link live" else "v0.9 · waiting to connect",
                         fontFamily = RidgeTheme.type.mono,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
