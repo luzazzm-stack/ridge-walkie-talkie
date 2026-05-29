@@ -3,8 +3,10 @@ package app.ridge
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -146,10 +148,28 @@ class MainActivity : ComponentActivity() {
         permLauncher.launch(list.toTypedArray())
     }
 
+    private fun openAppSettings() {
+        val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { startActivity(i) }
+    }
+
     private fun startRadioService() {
         val i = Intent(this, RadioService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i)
         else startService(i)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-check perms after returning from Settings — user may have toggled manually.
+        val nowGranted = allPermissionsGranted()
+        if (nowGranted != !store.state.value.needsPermissions) {
+            store.setNeedsPermissions(!nowGranted)
+            if (nowGranted) startRadioService()
+        }
     }
 
     override fun onDestroy() {
@@ -181,7 +201,8 @@ class MainActivity : ComponentActivity() {
                 val perm = PermStatus(mic = !state.needsPermissions, nearby = !state.needsPermissions, notif = !state.needsPermissions)
                 SplashScreen(
                     granted = perm,
-                    onAllow = { requestPermissions() }
+                    onAllow = { requestPermissions() },
+                    onOpenAppSettings = { openAppSettings() },
                 )
             }
             composable("empty") {

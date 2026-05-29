@@ -1,6 +1,8 @@
 package app.ridge.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +41,7 @@ data class PermStatus(val mic: Boolean, val nearby: Boolean, val notif: Boolean)
 fun SplashScreen(
     granted: PermStatus,
     onAllow: () -> Unit,
+    onOpenAppSettings: () -> Unit = {},
 ) {
     val c = RidgeTheme.colors
 
@@ -102,6 +105,37 @@ fun SplashScreen(
 
             Spacer(Modifier.height(14.dp))
             RidgePrimaryButton("Allow & continue", onClick = onAllow)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Dialog not appearing? Tap below to grant permissions in Android Settings.",
+                fontFamily = RidgeTheme.type.mono,
+                fontSize = 10.5.sp,
+                lineHeight = 14.sp,
+                color = c.muted,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.foundation.layout.Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(42.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(7.dp))
+                    .background(c.paper)
+                    .border(androidx.compose.foundation.BorderStroke(2.5.dp, c.border), androidx.compose.foundation.shape.RoundedCornerShape(7.dp))
+                    .clickable { onOpenAppSettings() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "OPEN APP SETTINGS",
+                    fontFamily = RidgeTheme.type.display,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 12.sp,
+                    letterSpacing = 0.6.sp,
+                    color = c.ink,
+                )
+            }
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
