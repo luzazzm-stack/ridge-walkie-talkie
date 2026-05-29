@@ -41,6 +41,7 @@ import app.ridge.ui.screens.GroupSetupScreen
 import app.ridge.ui.screens.HostingSetupScreen
 import app.ridge.ui.screens.InviteScreen
 import app.ridge.ui.screens.JoinerConnectingScreen
+import app.ridge.ui.screens.JoinerManualScreen
 import app.ridge.ui.screens.NameGroupScreen
 import app.ridge.ui.screens.PermStatus
 import app.ridge.ui.screens.SettingsScreen
@@ -323,18 +324,14 @@ class MainActivity : ComponentActivity() {
                 )
             }
             composable("joiner-manual") {
-                HostingSetupScreen(
-                    groupName = state.groupName,
-                    state = HotspotState.ManualNeeded,
-                    onRetry = { /* not applicable in joiner-manual */ },
-                    onManualSave = { ssid, pass ->
+                JoinerManualScreen(
+                    onConnect = { ssid, pass ->
                         store.setJoinTarget(ssid, pass)
                         joiner.connect(ssid, pass)
                         nav.navigate("joiner-connecting") {
                             popUpTo("empty") { inclusive = false }
                         }
                     },
-                    onContinue = { /* not used */ },
                     onCancel = {
                         store.leaveGroup()
                         nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
