@@ -20,6 +20,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.sqrt
 
 /**
@@ -40,9 +41,13 @@ class VoiceTransport(
     private val onActiveChanged: (Boolean) -> Unit,
     private val onPeerCount: (Int) -> Unit,
     private val onError: (String) -> Unit,
+    private val onStats: (txPackets: Long, rxPackets: Long) -> Unit = { _, _ -> },
 ) {
 
     enum class Mode { Host, Client }
+
+    /** A peer is identified by IP + the source port we actually heard from. */
+    private data class Peer(val ip: InetAddress, val port: Int)
 
     private val _active = MutableStateFlow(false)
     val active: StateFlow<Boolean> = _active.asStateFlow()
@@ -52,18 +57,26 @@ class VoiceTransport(
     private val holdPressed = AtomicBoolean(false)  // true → send while pressed
     private var sender: Thread? = null
     private var receiver: Thread? = null
+    private var statsThread: Thread? = null
 
     private var socket: DatagramSocket? = null
     private var mode: Mode? = null
     private var hostAddr: InetAddress? = null
-    private val peers = Collections.synchronizedSet(mutableSetOf<InetAddress>())
+    private var hostPort: Int = PORT
+    private val peers = Collections.synchronizedSet(mutableSetOf<Peer>())
+
+    private val txPackets = AtomicLong(0)
+    private val rxPackets = AtomicLong(0)
 
     fun startHost(network: Network? = null) {
         if (running.get()) return
         mode = Mode.Host
+        resetStats()
         runCatching {
-            val s = DatagramSocket(PORT)
+            val s = DatagramSocket(null)
+            s.reuseAddress = true
             network?.bindSocket(s)
+            s.bind(java.net.InetSocketAddress(PORT))
             socket = s
         }.onFailure { onError("host bind: ${it.message}"); return }
         startThreads()
@@ -72,14 +85,20 @@ class VoiceTransport(
     fun startClient(hostIp: String, network: Network?) {
         if (running.get()) return
         mode = Mode.Client
+        resetStats()
         runCatching {
             hostAddr = InetAddress.getByName(hostIp)
-            val s = DatagramSocket()
+            hostPort = PORT
+            val s = DatagramSocket(null)
             network?.bindSocket(s)
+            s.bind(null) // ephemeral local port, but bound to the Wi-Fi network
             socket = s
-            // hello packet so host knows we're here
+            // Hello packets so the host learns our address+port. Send a few in
+            // case the first is lost while the link settles.
             val hello = byteArrayOf(0)
-            s.send(DatagramPacket(hello, hello.size, hostAddr, PORT))
+            repeat(3) {
+                runCatching { s.send(DatagramPacket(hello, hello.size, hostAddr, hostPort)) }
+            }
         }.onFailure { onError("client connect: ${it.message}"); return }
         startThreads()
     }
@@ -90,6 +109,7 @@ class VoiceTransport(
         holdPressed.set(false)
         sender?.interrupt(); sender = null
         receiver?.interrupt(); receiver = null
+        statsThread?.interrupt(); statsThread = null
         runCatching { socket?.close() }
         socket = null
         peers.clear()
@@ -105,11 +125,24 @@ class VoiceTransport(
     /** PTT Hold: caller flips on press / off on release. */
     fun setHoldPressed(on: Boolean) { holdPressed.set(on) }
 
+    private fun resetStats() {
+        txPackets.set(0); rxPackets.set(0)
+        onStats(0, 0)
+    }
+
     private fun startThreads() {
         running.set(true)
         _active.value = true
         receiver = Thread({ receiveLoop() }, "ridge-rx").apply { isDaemon = true; start() }
         sender = Thread({ sendLoop() }, "ridge-tx").apply { isDaemon = true; start() }
+        statsThread = Thread({ statsLoop() }, "ridge-stats").apply { isDaemon = true; start() }
+    }
+
+    private fun statsLoop() {
+        while (running.get()) {
+            onStats(txPackets.get(), rxPackets.get())
+            runCatching { Thread.sleep(1000) }.getOrElse { return }
+        }
     }
 
     private fun receiveLoop() {
@@ -121,14 +154,17 @@ class VoiceTransport(
             while (running.get()) {
                 val pkt = DatagramPacket(buf, buf.size)
                 runCatching { s.receive(pkt) }.getOrNull() ?: continue
+                rxPackets.incrementAndGet()
                 val src = pkt.address
                 if (src != null && mode == Mode.Host) {
-                    if (peers.add(src)) onPeerCount(peers.size)
-                    // relay to other peers
+                    // Learn this peer by IP + the source port we actually heard.
+                    if (peers.add(Peer(src, pkt.port))) onPeerCount(peers.size)
+                    // Relay to all OTHER peers, each at their real source port.
                     val out = pkt.data.copyOfRange(0, pkt.length)
                     for (p in peers.toSet()) {
-                        if (p != src) runCatching {
-                            s.send(DatagramPacket(out, out.size, p, PORT))
+                        if (p.ip != src || p.port != pkt.port) runCatching {
+                            s.send(DatagramPacket(out, out.size, p.ip, p.port))
+                            txPackets.incrementAndGet()
                         }
                     }
                 }
@@ -217,12 +253,18 @@ class VoiceTransport(
         when (mode) {
             Mode.Host -> {
                 for (p in peers.toSet()) {
-                    runCatching { s.send(DatagramPacket(out, out.size, p, PORT)) }
+                    runCatching {
+                        s.send(DatagramPacket(out, out.size, p.ip, p.port))
+                        txPackets.incrementAndGet()
+                    }
                 }
             }
             Mode.Client -> {
                 val addr = hostAddr ?: return
-                runCatching { s.send(DatagramPacket(out, out.size, addr, PORT)) }
+                runCatching {
+                    s.send(DatagramPacket(out, out.size, addr, hostPort))
+                    txPackets.incrementAndGet()
+                }
             }
             else -> Unit
         }

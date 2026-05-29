@@ -60,6 +60,11 @@ data class UiState(
     val peerCount: Int = 0,
     val joinSsid: String = "",
     val joinPass: String = "",
+
+    // v0.10 — diagnostics
+    val txPackets: Long = 0,
+    val rxPackets: Long = 0,
+    val lastError: String = "",
 )
 
 class RidgeStore {
@@ -118,6 +123,9 @@ class RidgeStore {
             peerCount = 0,
             joinSsid = "",
             joinPass = "",
+            txPackets = 0,
+            rxPackets = 0,
+            lastError = "",
         )
     }
 
@@ -129,6 +137,8 @@ class RidgeStore {
     fun setTransportActive(v: Boolean) = _state.update { it.copy(transportActive = v) }
     fun setPeerCount(n: Int) = _state.update { it.copy(peerCount = n) }
     fun setRole(r: Role) = _state.update { it.copy(role = r) }
+    fun setStats(tx: Long, rx: Long) = _state.update { it.copy(txPackets = tx, rxPackets = rx) }
+    fun setLastError(e: String) = _state.update { it.copy(lastError = e) }
 
     fun updateMembers(transform: (List<Member>) -> List<Member>) =
         _state.update { it.copy(members = transform(it.members)) }

@@ -200,7 +200,7 @@ fun TalkScreen(
             ) {
                 Column {
                     Text(
-                        if (state.transportActive) "v0.9 · voice link live" else "v0.9 · waiting to connect",
+                        if (state.transportActive) "v0.10 · voice link live" else "v0.10 · waiting to connect",
                         fontFamily = RidgeTheme.type.mono,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
@@ -219,6 +219,17 @@ fun TalkScreen(
                         fontSize = 11.sp,
                         lineHeight = 16.sp,
                         color = c.ink,
+                    )
+                    // packet counters — proves bytes are flowing even if audio is silent
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "sent ${state.txPackets} · recv ${state.rxPackets} packets" +
+                            if (state.lastError.isNotBlank()) "  ·  ⚠ ${state.lastError}" else "",
+                        fontFamily = RidgeTheme.type.mono,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                        color = if (state.lastError.isNotBlank()) c.alarm else c.muted,
                     )
                 }
             }

@@ -41,6 +41,7 @@ fun SettingsScreen(
     state: UiState,
     onBack: () -> Unit,
     onLeaveGroup: () -> Unit,
+    onStopApp: () -> Unit,
     onTheme: (Int) -> Unit,         // 0=Day 1=Night 2=Auto
     onQuality: (Float) -> Unit,
     onSos: (Boolean) -> Unit,
@@ -267,6 +268,48 @@ fun SettingsScreen(
                 ToggleRow("Voice quality boost", "Opus 24kbps · ~25% more battery", state.boost, onBoost)
                 Divider(c.ink.copy(alpha = 0.12f))
                 ToggleRow("Bluetooth relay fallback", null, state.btRelay, onBtRelay)
+            }
+        }
+
+        // Stop RIDGE completely — kills the background service + notification
+        RidgeCard(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Stop RIDGE",
+                        fontFamily = RidgeTheme.type.display,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 14.sp,
+                        color = c.ink,
+                    )
+                    Text(
+                        "Quit the radio, stop the background service and remove the notification.",
+                        fontFamily = RidgeTheme.type.mono,
+                        fontSize = 10.5.sp,
+                        lineHeight = 14.sp,
+                        color = c.muted,
+                    )
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(c.ink)
+                        .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(7.dp))
+                        .clickable { onStopApp() }
+                        .padding(horizontal = 16.dp, vertical = 11.dp),
+                ) {
+                    Text(
+                        "STOP",
+                        fontFamily = RidgeTheme.type.display,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 13.sp,
+                        color = c.bone,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(20.dp))

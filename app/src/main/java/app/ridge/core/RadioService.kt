@@ -38,7 +38,7 @@ class RadioService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var transportRunning = false
-    private var lastNetwork: Network? = null
+    private var audioModeActive = false
 
     override fun onCreate() {
         super.onCreate()
@@ -60,23 +60,46 @@ class RadioService : Service() {
                 updateNotif()
             },
             onPeerCount = { n -> store.setPeerCount(n); updateNotif() },
-            onError = { /* surface to UI via store later; ignore for now */ },
+            onError = { e -> store.setLastError(e) },
+            onStats = { tx, rx -> store.setStats(tx, rx) },
         )
-        startForeground(NOTIF_ID, buildNotif())
+        startForegroundTyped()
         discovery.start()
         observeLifecycle()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                NOTIF_ID,
-                buildNotif(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            )
+        if (intent?.action == ACTION_STOP) {
+            // User asked to fully stop the radio.
+            store.leaveGroup()
+            stopSelf()
+            return START_NOT_STICKY
         }
+        startForegroundTyped()
         return START_STICKY
+    }
+
+    /** Start as a typed foreground service so the mic works in the background.
+     *  Typed FGS exists from API 29 (Q); on older we use the untyped form. */
+    private fun startForegroundTyped() {
+        val notif = buildNotif()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching {
+                startForeground(
+                    NOTIF_ID,
+                    notif,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                )
+            }.onFailure {
+                // Some OEMs reject CONNECTED_DEVICE; retry with microphone only.
+                runCatching {
+                    startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                }.onFailure { startForeground(NOTIF_ID, notif) }
+            }
+        } else {
+            startForeground(NOTIF_ID, notif)
+        }
     }
 
     private fun observeLifecycle() {
@@ -91,29 +114,43 @@ class RadioService : Service() {
                         hotspotActive = it.hotspotState is HotspotState.Active,
                         joinConnected = it.joinState is JoinState.Connected,
                         hostIp = (it.joinState as? JoinState.Connected)?.gatewayIp,
+                        joinNetwork = (it.joinState as? JoinState.Connected)?.network,
                     )
                 }
                 .distinctUntilChanged()
                 .onEach { trig ->
-                    val wantTransport = trig.hasGroup && (
-                            (trig.role == Role.Host && trig.hotspotActive) ||
-                                    (trig.role == Role.Joiner && trig.joinConnected)
-                            )
-                    if (wantTransport && !transportRunning) {
-                        when (trig.role) {
-                            Role.Host -> transport.startHost(network = null)
-                            Role.Joiner -> transport.startClient(trig.hostIp ?: "192.168.43.1", lastNetwork)
-                            else -> Unit
+                    try {
+                        val wantTransport = trig.hasGroup && (
+                                (trig.role == Role.Host && trig.hotspotActive) ||
+                                        (trig.role == Role.Joiner && trig.joinConnected)
+                                )
+                        if (wantTransport && !transportRunning) {
+                            // hand mic over from preview VOX, give it a moment to release
+                            vox.stop()
+                            Thread.sleep(120)
+                            enterCommunicationAudio()
+                            when (trig.role) {
+                                Role.Host -> transport.startHost(network = null)
+                                Role.Joiner -> transport.startClient(
+                                    trig.hostIp ?: "192.168.43.1",
+                                    trig.joinNetwork,
+                                )
+                                else -> Unit
+                            }
+                            transportRunning = true
+                            store.setTransportActive(true)
+                        } else if (!wantTransport && transportRunning) {
+                            transport.stop()
+                            transportRunning = false
+                            store.setTransportActive(false)
+                            exitCommunicationAudio()
                         }
-                        transportRunning = true
-                        store.setTransportActive(true)
-                        vox.stop() // hand mic over to transport
-                    } else if (!wantTransport && transportRunning) {
-                        transport.stop()
+                        updateNotif()
+                    } catch (e: Throwable) {
+                        store.setLastError("transport: ${e.message}")
                         transportRunning = false
                         store.setTransportActive(false)
                     }
-                    updateNotif()
                 }
                 .launchIn(this)
 
@@ -129,33 +166,49 @@ class RadioService : Service() {
                 }
                 .distinctUntilChanged()
                 .onEach { t ->
-                    if (t.transportActive) {
-                        when (t.talkMode) {
-                            TalkMode.Hold -> {
-                                transport.setVoxEnabled(false)
-                                transport.setHoldPressed(t.transmitting)
+                    try {
+                        if (t.transportActive) {
+                            when (t.talkMode) {
+                                TalkMode.Hold -> {
+                                    transport.setVoxEnabled(false)
+                                    transport.setHoldPressed(t.transmitting)
+                                }
+                                TalkMode.HandsFree -> {
+                                    transport.setVoxEnabled(t.hasGroup)
+                                    transport.setHoldPressed(false)
+                                }
                             }
-                            TalkMode.HandsFree -> {
-                                transport.setVoxEnabled(t.hasGroup)
-                                transport.setHoldPressed(false)
-                            }
-                        }
-                        if (t.transmitting) acquireWake() else releaseWake()
-                    } else {
-                        // pre-connect VOX preview when in HandsFree but transport not active
-                        val voxWant = t.hasGroup && t.talkMode == TalkMode.HandsFree
-                        if (voxWant) {
-                            val started = vox.start()
-                            if (started) acquireWake() else releaseWake()
-                        } else {
-                            vox.stop()
                             if (t.transmitting) acquireWake() else releaseWake()
+                        } else {
+                            // pre-connect VOX preview when in HandsFree but transport not active
+                            val voxWant = t.hasGroup && t.talkMode == TalkMode.HandsFree
+                            if (voxWant) {
+                                val started = vox.start()
+                                if (started) acquireWake() else releaseWake()
+                            } else {
+                                vox.stop()
+                                if (t.transmitting) acquireWake() else releaseWake()
+                            }
                         }
+                        updateNotif()
+                    } catch (e: Throwable) {
+                        store.setLastError("transmit: ${e.message}")
                     }
-                    updateNotif()
                 }
                 .launchIn(this)
         }
+    }
+
+    private fun enterCommunicationAudio() {
+        if (audioModeActive) return
+        runCatching { router.apply(store.state.value.audioOut) }
+        audioModeActive = true
+    }
+
+    private fun exitCommunicationAudio() {
+        if (!audioModeActive) return
+        runCatching { router.release() }
+        audioModeActive = false
     }
 
     private fun acquireWake() {
@@ -189,13 +242,17 @@ class RadioService : Service() {
             else -> "On air · ${s.groupName.ifBlank { "Untitled" }}"
         }
         val text = when {
-            !s.hasGroup -> "Open RIDGE to start"
+            !s.hasGroup -> "Tap to open · tap Stop to quit"
             s.transmitting -> "Speaking — live"
             else -> "code ${s.groupCode} · ${s.peerCount} connected"
         }
 
         val launch = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val stop = PendingIntent.getService(
+            this, 1, Intent(this, RadioService::class.java).apply { action = ACTION_STOP },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, RidgeApp.CH_RADIO)
@@ -207,6 +264,7 @@ class RadioService : Service() {
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(launch)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stop)
             .build()
     }
 
@@ -216,14 +274,16 @@ class RadioService : Service() {
         runCatching { transport.stop() }
         runCatching { vox.stop() }
         runCatching { discovery.stop() }
+        exitCommunicationAudio()
         runCatching { router.release() }
         releaseWake()
         super.onDestroy()
     }
 
-    fun setActiveNetwork(network: Network?) { lastNetwork = network }
-
-    companion object { const val NOTIF_ID = 1001 }
+    companion object {
+        const val NOTIF_ID = 1001
+        const val ACTION_STOP = "app.ridge.action.STOP"
+    }
 
     private data class TransportTrigger(
         val hasGroup: Boolean,
@@ -231,6 +291,7 @@ class RadioService : Service() {
         val hotspotActive: Boolean,
         val joinConnected: Boolean,
         val hostIp: String?,
+        val joinNetwork: Network?,
     )
 
     private data class TransmitTrigger(

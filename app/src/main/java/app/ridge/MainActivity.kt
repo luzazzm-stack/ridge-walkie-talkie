@@ -196,6 +196,15 @@ class MainActivity : ComponentActivity() {
         else startService(i)
     }
 
+    private fun stopRadioAndQuit() {
+        runCatching { hotspot.stop() }
+        runCatching { joiner.disconnect() }
+        store.leaveGroup()
+        val i = Intent(this, RadioService::class.java).apply { action = RadioService.ACTION_STOP }
+        runCatching { startService(i) }
+        finishAndRemoveTask()
+    }
+
     override fun onResume() {
         super.onResume()
         // Re-check perms after returning from Settings — user may have toggled manually.
@@ -378,6 +387,7 @@ class MainActivity : ComponentActivity() {
                     state = state,
                     onBack = { nav.popBackStack() },
                     onLeaveGroup = { showLeaveConfirm = true },
+                    onStopApp = { stopRadioAndQuit() },
                     onTheme = { store.setNight(it == 1) },
                     onQuality = { store.setVoiceQuality(it) },
                     onSos = { store.setSosArmed(it) },
