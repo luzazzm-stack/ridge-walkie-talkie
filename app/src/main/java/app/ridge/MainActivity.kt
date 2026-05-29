@@ -41,7 +41,6 @@ import app.ridge.ui.screens.GroupSetupScreen
 import app.ridge.ui.screens.HostingSetupScreen
 import app.ridge.ui.screens.InviteScreen
 import app.ridge.ui.screens.JoinerConnectingScreen
-import app.ridge.ui.screens.JoinerManualScreen
 import app.ridge.ui.screens.NameGroupScreen
 import app.ridge.ui.screens.PermStatus
 import app.ridge.ui.screens.SettingsScreen
@@ -184,6 +183,13 @@ class MainActivity : ComponentActivity() {
         runCatching { startActivity(i) }
     }
 
+    private fun openWifiSettings() {
+        val i = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { startActivity(i) }
+    }
+
     private fun startRadioService() {
         val i = Intent(this, RadioService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i)
@@ -281,25 +287,20 @@ class MainActivity : ComponentActivity() {
                             val inv = parseInvite(scanned)
                             store.startGroup(inv.name ?: "Joined group", role = Role.Joiner)
                             store.setGroupCode(inv.code)
-                            if (inv.ssid != null && inv.pass != null) {
-                                store.setJoinTarget(inv.ssid, inv.pass)
-                                joiner.connect(inv.ssid, inv.pass)
-                                nav.navigate("joiner-connecting") {
-                                    popUpTo("empty") { inclusive = false }
-                                }
-                            } else {
-                                // Code-only join — no SSID/pass yet, go to manual
-                                nav.navigate("joiner-manual") {
-                                    popUpTo("empty") { inclusive = false }
-                                }
+                            // Pre-fill what we know; user joins manually in Wi-Fi settings.
+                            store.setJoinTarget(inv.ssid ?: "", inv.pass ?: "")
+                            joiner.expectSsid(inv.ssid ?: "")
+                            nav.navigate("joiner-connecting") {
+                                popUpTo("empty") { inclusive = false }
                             }
                         }
                     },
                     onJoinWithCode = { code ->
                         store.startGroup("Group $code", role = Role.Joiner)
                         store.setGroupCode(code)
-                        // No SSID/pass in code-only path — user types them in
-                        nav.navigate("joiner-manual") {
+                        store.setJoinTarget("", "")
+                        joiner.expectSsid("")
+                        nav.navigate("joiner-connecting") {
                             popUpTo("empty") { inclusive = false }
                         }
                     },
@@ -310,7 +311,11 @@ class MainActivity : ComponentActivity() {
                 JoinerConnectingScreen(
                     state = state.joinState,
                     targetSsid = state.joinSsid,
-                    onRetry = { joiner.connect(state.joinSsid, state.joinPass) },
+                    targetPass = state.joinPass,
+                    onOpenWifiSettings = { openWifiSettings() },
+                    onTryConnect = {
+                        joiner.detectCurrentWifi(state.joinSsid)
+                    },
                     onConnected = {
                         nav.navigate("talk") {
                             popUpTo("empty") { inclusive = false }
@@ -318,21 +323,6 @@ class MainActivity : ComponentActivity() {
                     },
                     onCancel = {
                         joiner.disconnect()
-                        store.leaveGroup()
-                        nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
-                    },
-                )
-            }
-            composable("joiner-manual") {
-                JoinerManualScreen(
-                    onConnect = { ssid, pass ->
-                        store.setJoinTarget(ssid, pass)
-                        joiner.connect(ssid, pass)
-                        nav.navigate("joiner-connecting") {
-                            popUpTo("empty") { inclusive = false }
-                        }
-                    },
-                    onCancel = {
                         store.leaveGroup()
                         nav.navigate("empty") { popUpTo("empty") { inclusive = true } }
                     },

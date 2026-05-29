@@ -23,10 +23,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ridge.core.JoinState
+import app.ridge.ui.components.HazardTape
 import app.ridge.ui.components.RidgeCard
 import app.ridge.ui.components.RidgeGhostButton
 import app.ridge.ui.components.RidgeLabel
@@ -37,7 +39,9 @@ import app.ridge.ui.theme.RidgeTheme
 fun JoinerConnectingScreen(
     state: JoinState,
     targetSsid: String,
-    onRetry: () -> Unit,
+    targetPass: String,
+    onOpenWifiSettings: () -> Unit,
+    onTryConnect: () -> Unit,
     onConnected: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -63,7 +67,7 @@ fun JoinerConnectingScreen(
                 contentAlignment = Alignment.Center,
             ) { Text("‹", fontSize = 22.sp, fontWeight = FontWeight.Black, color = c.ink) }
             Text(
-                "Joining",
+                "Join host's Wi-Fi",
                 fontFamily = RidgeTheme.type.display,
                 fontWeight = FontWeight.Black,
                 fontSize = 22.sp,
@@ -71,104 +75,144 @@ fun JoinerConnectingScreen(
                 color = c.ink,
             )
         }
-        Spacer(Modifier.height(20.dp))
-        Text(
-            targetSsid.ifBlank { "RIDGE group" },
-            fontFamily = RidgeTheme.type.display,
-            fontWeight = FontWeight.Black,
-            fontSize = 26.sp,
-            letterSpacing = (-0.5).sp,
-            color = c.ink,
-        )
-        Spacer(Modifier.height(8.dp))
 
-        when (state) {
-            is JoinState.Disconnected -> {
-                Text(
-                    "Ready to connect.",
-                    fontFamily = RidgeTheme.type.mono,
-                    fontSize = 12.sp,
-                    color = c.muted,
-                )
-                Spacer(Modifier.height(20.dp))
-                RidgePrimaryButton("Connect", onClick = onRetry)
-            }
-            is JoinState.Connecting -> {
-                Text(
-                    "Asking Android to connect. Tap “Connect” if a system dialog appears.",
-                    fontFamily = RidgeTheme.type.mono,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = c.muted,
-                )
-                Spacer(Modifier.height(20.dp))
-                RidgeCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Spacer(Modifier.height(20.dp))
+
+        // What to join
+        if (targetSsid.isNotBlank()) {
+            RidgeCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    RidgeLabel("You're looking for")
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        targetSsid,
+                        fontFamily = RidgeTheme.type.mono,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = c.ink,
+                    )
+                    if (targetPass.isNotBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        RidgeLabel("Password")
+                        Spacer(Modifier.height(4.dp))
                         Text(
-                            "Connecting…",
-                            fontFamily = RidgeTheme.type.display,
-                            fontWeight = FontWeight.ExtraBold,
+                            targetPass,
+                            fontFamily = RidgeTheme.type.mono,
+                            fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             color = c.ink,
                         )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Joining ${state.ssid}",
-                            fontFamily = RidgeTheme.type.mono,
-                            fontSize = 11.sp,
-                            color = c.muted,
-                        )
                     }
                 }
             }
-            is JoinState.Connected -> {
-                RidgeCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(18.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(c.field))
-                            Spacer(Modifier.size(8.dp))
-                            Text(
-                                "CONNECTED",
-                                fontFamily = RidgeTheme.type.mono,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                letterSpacing = 1.3.sp,
-                                color = c.field,
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        RidgeLabel("Gateway")
-                        Text(
-                            state.gatewayIp,
-                            fontFamily = RidgeTheme.type.mono,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = c.ink,
-                        )
-                    }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        // 3-step instructions
+        RidgeCard(Modifier.fillMaxWidth()) {
+            Column {
+                HazardTape()
+                Column(Modifier.padding(16.dp)) {
+                    StepRow(num = "1", title = "Open Wi-Fi settings",
+                            body = "Tap below. RIDGE will hand off to Android's Wi-Fi screen.")
+                    Spacer(Modifier.height(10.dp))
+                    StepRow(num = "2", title = "Tap the host's hotspot",
+                            body = if (targetSsid.isNotBlank()) "Look for \"$targetSsid\" in the list. Type the password above when asked." else "Pick the hotspot your friend turned on. Type its password.")
+                    Spacer(Modifier.height(10.dp))
+                    StepRow(num = "3", title = "Come back and tap Try connecting",
+                            body = "Android will warn that the network has no internet — tap \"Keep using this network\" or similar. Then return to RIDGE.")
                 }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "Entering the channel…",
-                    fontFamily = RidgeTheme.type.mono,
-                    fontSize = 11.5.sp,
-                    color = c.muted,
-                )
             }
+        }
+
+        Spacer(Modifier.height(18.dp))
+
+        when (state) {
             is JoinState.Failed -> {
                 Text(
-                    state.reason,
+                    "✗ ${state.reason}",
                     fontFamily = RidgeTheme.type.mono,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                     color = c.alarm,
                 )
-                Spacer(Modifier.height(20.dp))
-                RidgePrimaryButton("Retry", onClick = onRetry)
+                Spacer(Modifier.height(12.dp))
             }
+            is JoinState.Connected -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(c.field))
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        "CONNECTED — opening channel…",
+                        fontFamily = RidgeTheme.type.mono,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.0.sp,
+                        color = c.field,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Gateway: ${state.gatewayIp}",
+                    fontFamily = RidgeTheme.type.mono,
+                    fontSize = 10.5.sp,
+                    color = c.muted,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            is JoinState.Connecting -> {
+                Text(
+                    "Checking… looking for the host's gateway.",
+                    fontFamily = RidgeTheme.type.mono,
+                    fontSize = 11.5.sp,
+                    color = c.muted,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            else -> {}
         }
+
+        // Action buttons
+        RidgePrimaryButton("Open Wi-Fi settings", onClick = onOpenWifiSettings)
+        Spacer(Modifier.height(10.dp))
+        RidgeGhostButton("Try connecting", onClick = onTryConnect)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Tap Open Wi-Fi settings first. Once you've joined the host's hotspot, come back and tap Try connecting.",
+            fontFamily = RidgeTheme.type.mono,
+            fontSize = 10.5.sp,
+            lineHeight = 14.sp,
+            color = c.muted,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+
         Spacer(Modifier.weight(1f))
         RidgeGhostButton("Cancel", onClick = onCancel)
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun StepRow(num: String, title: String, body: String) {
+    val c = RidgeTheme.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(
+            Modifier
+                .size(28.dp)
+                .clip(RoundedCornerShape(50))
+                .background(c.hivis)
+                .border(BorderStroke(2.5.dp, c.border), RoundedCornerShape(50)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(num, fontFamily = RidgeTheme.type.display, fontWeight = FontWeight.Black,
+                 fontSize = 14.sp, color = Color.White)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, fontFamily = RidgeTheme.type.display, fontWeight = FontWeight.ExtraBold,
+                 fontSize = 14.sp, color = c.ink)
+            Text(body, fontFamily = RidgeTheme.type.mono, fontSize = 11.sp,
+                 lineHeight = 16.sp, color = c.muted)
+        }
     }
 }
