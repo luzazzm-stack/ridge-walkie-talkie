@@ -11,8 +11,8 @@ android {
         applicationId = "app.ridge"
         minSdk = 26
         targetSdk = 33
-        versionCode = 13
-        versionName = "0.11"
+        versionCode = 14
+        versionName = "0.11.1"
         base.archivesName.set("Ridge-v$versionName")
         vectorDrawables.useSupportLibrary = true
     }

@@ -138,12 +138,31 @@ class MainActivity : ComponentActivity() {
         store.setNeedsPermissions(!micGranted())
         if (micGranted()) startRadioService()
 
+        val savedCrash = runCatching {
+            getSharedPreferences("ridge", MODE_PRIVATE).getString("last_crash", null)
+        }.getOrNull()
+
         setContent {
             val state by store.state.collectAsState()
+            var crash by remember { mutableStateOf(savedCrash) }
             RidgeTheme(night = state.night) {
                 val c = RidgeTheme.colors
                 Box(Modifier.fillMaxSize().background(c.bone)) {
                     AppNav()
+                    val cr = crash
+                    if (!cr.isNullOrBlank()) {
+                        app.ridge.ui.components.CrashDialog(
+                            trace = cr,
+                            onCopy = {},
+                            onDismiss = {
+                                crash = null
+                                runCatching {
+                                    getSharedPreferences("ridge", MODE_PRIVATE).edit()
+                                        .remove("last_crash").apply()
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
