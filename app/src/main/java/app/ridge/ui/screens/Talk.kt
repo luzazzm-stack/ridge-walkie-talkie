@@ -31,7 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ridge.core.AudioOut
 import app.ridge.core.ConnMode
+import app.ridge.core.HotspotState
+import app.ridge.core.JoinState
 import app.ridge.core.Member
+import app.ridge.core.Role
 import app.ridge.core.TalkMode
 import app.ridge.core.UiState
 import app.ridge.ui.components.Avatar
@@ -60,8 +63,8 @@ fun TalkScreen(
     val c = RidgeTheme.colors
 
     Column(Modifier.fillMaxSize().background(c.bone)) {
-        // connection mode strip
-        ConnModeStrip(state.connMode, state.autoMode, onSelect = onConnMode)
+        // real connection status (replaces old BT vs Wi-Fi Direct strip)
+        ConnStatusBar(state = state)
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             // channel header — back + channel + invite + settings
@@ -197,7 +200,7 @@ fun TalkScreen(
             ) {
                 Column {
                     Text(
-                        if (state.transportActive) "v0.6 · voice link live" else "v0.6 · waiting for transport",
+                        if (state.transportActive) "v0.7 · voice link live" else "v0.7 · setting up",
                         fontFamily = RidgeTheme.type.mono,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
@@ -206,11 +209,11 @@ fun TalkScreen(
                     )
                     Text(
                         if (state.transportActive) {
-                            "UDP voice over Wi-Fi is active. ${state.peerCount} peer${if (state.peerCount == 1) "" else "s"} connected. Press PTT to speak, or use Hands-free for VOX."
-                        } else if (state.role == app.ridge.core.Role.Host) {
-                            "Waiting for the local hotspot to come up. Allow Android's hotspot prompt if it asks."
+                            "UDP voice live. ${state.peerCount} peer${if (state.peerCount == 1) "" else "s"}. Press PTT to talk, or switch to Hands-free."
+                        } else if (state.role == Role.Host) {
+                            "Tap + INVITE to show your QR + code so friends can join. The status bar at top says when peers connect."
                         } else {
-                            "Waiting for the Wi-Fi connection to your group's host."
+                            "Waiting for the connection to your group's host. Status bar at top shows progress."
                         },
                         fontFamily = RidgeTheme.type.mono,
                         fontSize = 11.sp,
@@ -224,82 +227,65 @@ fun TalkScreen(
 }
 
 @Composable
-private fun ConnModeStrip(active: ConnMode, auto: Boolean, onSelect: (ConnMode) -> Unit) {
+private fun ConnStatusBar(state: UiState) {
     val c = RidgeTheme.colors
-    Box(Modifier.fillMaxWidth().background(c.ink)) {
-        Row(Modifier.fillMaxWidth()) {
-            ModeButton(
-                label = "Bluetooth",
-                desc = "~30m · 18 hr",
-                active = active == ConnMode.Bluetooth,
-                onClick = { onSelect(ConnMode.Bluetooth) },
-                modifier = Modifier.weight(1f),
-            )
-            Box(Modifier.width(2.5.dp).height(56.dp).background(Color(0xFF2A2A28)))
-            ModeButton(
-                label = "Wi-Fi Direct",
-                desc = "~100m · 2 hr",
-                active = active == ConnMode.WifiDirect,
-                onClick = { onSelect(ConnMode.WifiDirect) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        if (auto) {
-            Box(
-                Modifier
-                    .padding(top = 6.dp, end = 8.dp)
-                    .align(Alignment.TopEnd)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(c.paper)
-                    .padding(horizontal = 5.dp, vertical = 1.dp)
-            ) {
+    val role = state.role
+    val ts = state.transportActive
+    val (dotColor, label, sub) = when {
+        ts && role == Role.Host -> Triple(
+            c.field,
+            "HOSTING",
+            "${state.peerCount} connected · code ${state.groupCode}"
+        )
+        ts && role == Role.Joiner -> Triple(
+            c.field,
+            "CONNECTED",
+            "joined · code ${state.groupCode}"
+        )
+        role == Role.Host && state.hotspotState is HotspotState.Active -> Triple(
+            c.beacon,
+            "WAITING FOR PEERS",
+            "hotspot \"${(state.hotspotState as HotspotState.Active).ssid}\" · 0 connected"
+        )
+        role == Role.Joiner && state.joinState is JoinState.Connecting -> Triple(
+            c.beacon,
+            "CONNECTING",
+            "joining ${(state.joinState as JoinState.Connecting).ssid}…"
+        )
+        role == Role.Joiner && state.joinState is JoinState.Failed -> Triple(
+            c.alarm,
+            "CONNECT FAILED",
+            (state.joinState as JoinState.Failed).reason.take(40)
+        )
+        role == Role.Host -> Triple(
+            c.beacon,
+            "HOST · NOT READY",
+            "open Invite to set up hotspot"
+        )
+        else -> Triple(c.muted, "IDLE", "no group")
+    }
+
+    Box(Modifier.fillMaxWidth().background(c.ink).padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(dotColor))
+            Column(Modifier.weight(1f)) {
                 Text(
-                    "AUTO",
+                    label,
+                    fontFamily = RidgeTheme.type.display,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 12.sp,
+                    letterSpacing = 1.0.sp,
+                    color = c.bone,
+                )
+                Text(
+                    sub,
                     fontFamily = RidgeTheme.type.mono,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 9.sp,
-                    letterSpacing = 1.4.sp,
-                    color = c.ink,
+                    fontSize = 10.sp,
+                    color = c.bone.copy(alpha = 0.75f),
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ModeButton(
-    label: String,
-    desc: String,
-    active: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val c = RidgeTheme.colors
-    Column(
-        modifier
-            .background(if (active) c.hivis else Color.Transparent)
-            .clickable { onClick() }
-            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.size(7.dp).clip(CircleShape).background(c.bone))
-            Text(
-                label.uppercase(),
-                fontFamily = RidgeTheme.type.display,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 11.sp,
-                letterSpacing = 1.0.sp,
-                color = c.bone,
-            )
-        }
-        Text(
-            desc,
-            fontFamily = RidgeTheme.type.mono,
-            fontWeight = FontWeight.Bold,
-            fontSize = 10.sp,
-            color = c.bone.copy(alpha = 0.85f),
-            modifier = Modifier.padding(top = 2.dp),
-        )
     }
 }
 

@@ -70,6 +70,14 @@ fun SplashScreen(
                 letterSpacing = 1.4.sp,
                 color = c.hivis,
             )
+            Text(
+                "v0.7",
+                fontFamily = RidgeTheme.type.mono,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                letterSpacing = 0.8.sp,
+                color = c.bone.copy(alpha = 0.5f),
+            )
         }
         HazardTape()
 

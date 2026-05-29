@@ -242,7 +242,7 @@ class MainActivity : ComponentActivity() {
                 NameGroupScreen(
                     onStart = { name ->
                         store.startGroup(name, role = Role.Host)
-                        hotspot.start()
+                        // Don't auto-fire hotspot.start() — let user choose manual or auto on next screen.
                         nav.navigate("hosting-setup") {
                             popUpTo("empty") { inclusive = false }
                         }
@@ -254,8 +254,13 @@ class MainActivity : ComponentActivity() {
                 HostingSetupScreen(
                     groupName = state.groupName,
                     state = state.hotspotState,
-                    onRetry = { hotspot.start() },
-                    onManualSave = { ssid, pass -> hotspot.setManual(ssid, pass) },
+                    onTryAuto = { hotspot.start() },
+                    onManualSave = { ssid, pass ->
+                        hotspot.setManual(ssid, pass)
+                        nav.navigate("talk") {
+                            popUpTo("empty") { inclusive = false }
+                        }
+                    },
                     onContinue = {
                         nav.navigate("talk") {
                             popUpTo("empty") { inclusive = false }
