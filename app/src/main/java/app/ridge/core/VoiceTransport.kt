@@ -50,7 +50,8 @@ class VoiceTransport(
 
     enum class Mode { Host, Client }
 
-    private data class Peer(val ip: InetAddress, val port: Int, var name: String)
+    /** Identity is ip+port only (immutable) so it's safe as a map key. */
+    private data class PeerKey(val ip: InetAddress, val port: Int)
 
     @Volatile private var myName: String = "Me"
     fun setMyName(name: String) { myName = name.ifBlank { "Me" } }
@@ -71,7 +72,7 @@ class VoiceTransport(
     private var hostAddr: InetAddress? = null
     private var hostPort: Int = PORT
     private var hostName: String = "Host"
-    private val peers = Collections.synchronizedSet(LinkedHashSet<Peer>())
+    private val peers = Collections.synchronizedMap(LinkedHashMap<PeerKey, String>())  // key -> name
 
     private val txPackets = AtomicLong(0)
     private val rxPackets = AtomicLong(0)
@@ -153,7 +154,7 @@ class VoiceTransport(
 
     private fun emitPeers() {
         when (mode) {
-            Mode.Host -> onPeers(peers.toList().map { it.name })
+            Mode.Host -> onPeers(synchronized(peers) { peers.values.toList() })
             Mode.Client -> onPeers(listOf(hostName))
             else -> onPeers(emptyList())
         }
@@ -203,13 +204,15 @@ class VoiceTransport(
                 runCatching { s.send(DatagramPacket(pkt, pkt.size, addr, hostPort)) }
             }
             Mode.Host -> {
-                for (p in peers.toSet()) {
-                    runCatching { s.send(DatagramPacket(pkt, pkt.size, p.ip, p.port)) }
+                for (k in peerKeys()) {
+                    runCatching { s.send(DatagramPacket(pkt, pkt.size, k.ip, k.port)) }
                 }
             }
             else -> Unit
         }
     }
+
+    private fun peerKeys(): List<PeerKey> = synchronized(peers) { peers.keys.toList() }
 
     private fun receiveLoop() {
         val s = socket ?: return
@@ -231,13 +234,16 @@ class VoiceTransport(
                     TYPE_HELLO -> {
                         val name = if (len > 1) String(buf, 1, len - 1, Charsets.UTF_8).trim() else ""
                         if (mode == Mode.Host) {
-                            val existing = peers.firstOrNull { it.ip == src && it.port == pkt.port }
-                            if (existing == null) {
-                                peers.add(Peer(src, pkt.port, name.ifBlank { "Member" }))
+                            val key = PeerKey(src, pkt.port)
+                            val isNew = synchronized(peers) { !peers.containsKey(key) }
+                            synchronized(peers) {
+                                // add new, or update a non-blank name; never blank out a known name
+                                if (isNew || (name.isNotBlank())) peers[key] = name.ifBlank { peers[key] ?: "Member" }
+                            }
+                            if (isNew) {
                                 // greet back so the client learns the host's name
-                                runCatching { s.send(DatagramPacket(helloPacket(), helloPacket().size, src, pkt.port)) }
-                            } else if (name.isNotBlank() && existing.name != name) {
-                                existing.name = name
+                                val h = helloPacket()
+                                runCatching { s.send(DatagramPacket(h, h.size, src, pkt.port)) }
                             }
                             emitPeers()
                         } else if (mode == Mode.Client) {
@@ -251,9 +257,9 @@ class VoiceTransport(
                         if (mode == Mode.Host) {
                             // relay to all OTHER peers (preserve type byte)
                             val out = pkt.data.copyOfRange(0, len)
-                            for (p in peers.toSet()) {
-                                if (p.ip != src || p.port != pkt.port) runCatching {
-                                    s.send(DatagramPacket(out, out.size, p.ip, p.port))
+                            for (k in peerKeys()) {
+                                if (k.ip != src || k.port != pkt.port) runCatching {
+                                    s.send(DatagramPacket(out, out.size, k.ip, k.port))
                                     txPackets.incrementAndGet()
                                 }
                             }
@@ -359,9 +365,9 @@ class VoiceTransport(
         val out = if (len == data.size) data else data.copyOf(len)
         when (mode) {
             Mode.Host -> {
-                for (p in peers.toSet()) {
+                for (k in peerKeys()) {
                     runCatching {
-                        s.send(DatagramPacket(out, out.size, p.ip, p.port))
+                        s.send(DatagramPacket(out, out.size, k.ip, k.port))
                         txPackets.incrementAndGet()
                     }
                 }
