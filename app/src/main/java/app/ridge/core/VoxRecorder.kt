@@ -55,7 +55,10 @@ class VoxRecorder(
             r.startRecording()
             recorder = r
             running.set(true)
-            thread = Thread({ loop(minBuf, threshold) }, "ridge-vox").apply {
+            thread = Thread({
+                try { loop(minBuf, threshold) } catch (_: InterruptedException) { /* normal stop */ }
+                catch (_: Throwable) { /* never crash the app from this worker */ }
+            }, "ridge-vox").apply {
                 isDaemon = true
                 start()
             }
@@ -93,7 +96,8 @@ class VoxRecorder(
             val rec = recorder ?: break
             val n = try { rec.read(buf, 0, buf.size) } catch (_: Throwable) { -1 }
             if (n <= 0) {
-                Thread.sleep(20)
+                // stop() interrupts this thread — exit cleanly, don't crash.
+                try { Thread.sleep(20) } catch (_: InterruptedException) { return }
                 continue
             }
             var sumSq = 0.0

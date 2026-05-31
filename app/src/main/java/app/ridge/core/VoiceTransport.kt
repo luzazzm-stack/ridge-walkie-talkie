@@ -160,14 +160,20 @@ class VoiceTransport(
         }
     }
 
+    /** Run a worker body, swallowing interruption (normal stop) and any other
+     *  throwable so a background thread can never crash the whole app. */
+    private inline fun guarded(crossinline body: () -> Unit): () -> Unit = {
+        try { body() } catch (_: InterruptedException) { } catch (_: Throwable) { }
+    }
+
     private fun startThreads() {
         running.set(true)
         _active.value = true
-        receiver = Thread({ receiveLoop() }, "ridge-rx").apply { isDaemon = true; start() }
-        sender = Thread({ sendLoop() }, "ridge-tx").apply { isDaemon = true; start() }
-        statsThread = Thread({ statsLoop() }, "ridge-stats").apply { isDaemon = true; start() }
+        receiver = Thread(guarded { receiveLoop() }, "ridge-rx").apply { isDaemon = true; start() }
+        sender = Thread(guarded { sendLoop() }, "ridge-tx").apply { isDaemon = true; start() }
+        statsThread = Thread(guarded { statsLoop() }, "ridge-stats").apply { isDaemon = true; start() }
         if (mode == Mode.Client) {
-            keepAliveThread = Thread({ keepAliveLoop() }, "ridge-keepalive").apply { isDaemon = true; start() }
+            keepAliveThread = Thread(guarded { keepAliveLoop() }, "ridge-keepalive").apply { isDaemon = true; start() }
         }
     }
 
