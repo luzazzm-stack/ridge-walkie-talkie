@@ -310,7 +310,7 @@ class MainActivity : ComponentActivity() {
                 NameGroupScreen(
                     onStart = { name ->
                         store.startGroup(name, role = Role.Host)
-                        // Don't auto-fire hotspot.start() — let user choose manual or auto on next screen.
+                        startRadioService()  // ensure the radio is running (e.g. after a prior Stop)
                         nav.navigate("hosting-setup") {
                             popUpTo("empty") { inclusive = false }
                         }
@@ -348,6 +348,7 @@ class MainActivity : ComponentActivity() {
                             val inv = parseInvite(scanned)
                             store.startGroup(inv.name ?: "Joined group", role = Role.Joiner)
                             store.setGroupCode(inv.code)
+                            startRadioService()
                             // Pre-fill what we know; user joins manually in Wi-Fi settings.
                             store.setJoinTarget(inv.ssid ?: "", inv.pass ?: "")
                             joiner.expectSsid(inv.ssid ?: "")
@@ -359,6 +360,7 @@ class MainActivity : ComponentActivity() {
                     onJoinWithCode = { code ->
                         store.startGroup("Group $code", role = Role.Joiner)
                         store.setGroupCode(code)
+                        startRadioService()
                         store.setJoinTarget("", "")
                         joiner.expectSsid("")
                         nav.navigate("joiner-connecting") {

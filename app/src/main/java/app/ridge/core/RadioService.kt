@@ -38,6 +38,26 @@ class RadioService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var transportRunning = false
     private var audioModeActive = false
+    @Volatile private var stopping = false
+
+    /** One true teardown path — used by the notification Stop, in-app Stop, and
+     *  when the app is swiped from recents. Sets `stopping` first so async
+     *  callbacks can't re-post the notification after we've removed it. */
+    private fun fullStop() {
+        stopping = true
+        modeJob?.cancel()
+        runCatching { transport.stop() }
+        runCatching { vox.stop() }
+        exitCommunicationAudio()
+        releaseWake()
+        store.leaveGroup()
+        runCatching {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+            nm.cancel(NOTIF_ID)
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -70,15 +90,10 @@ class RadioService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            // User asked to fully stop the radio. Tear down cleanly, then quit.
-            runCatching { transport.stop() }
-            runCatching { vox.stop() }
-            exitCommunicationAudio()
-            store.leaveGroup()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            fullStop()
             return START_NOT_STICKY
         }
+        stopping = false   // normal (re)start clears any prior stopping state
         startForegroundTyped()
         return START_STICKY
     }
@@ -242,10 +257,17 @@ class RadioService : Service() {
     }
 
     private fun updateNotif() {
+        if (stopping) return  // don't resurrect the notification mid-teardown
         runCatching {
             val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
             nm.notify(NOTIF_ID, buildNotif())
         }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // App swiped away from recents → stop the radio + notification.
+        fullStop()
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun deviceName(): String =
