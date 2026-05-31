@@ -73,6 +73,7 @@ class VoiceTransport(
     private var hostPort: Int = PORT
     private var hostName: String = "Host"
     private val peers = Collections.synchronizedMap(LinkedHashMap<PeerKey, String>())  // key -> name
+    private val peerSeen = Collections.synchronizedMap(HashMap<PeerKey, Long>())       // key -> last packet ms
 
     private val txPackets = AtomicLong(0)
     private val rxPackets = AtomicLong(0)
@@ -138,6 +139,7 @@ class VoiceTransport(
         runCatching { socket?.close() }
         socket = null
         peers.clear()
+        peerSeen.clear()
         onPeers(emptyList())
         onActiveChanged(false)
         onLevel(0f)
@@ -180,8 +182,21 @@ class VoiceTransport(
     private fun statsLoop() {
         while (running.get()) {
             onStats(txPackets.get(), rxPackets.get())
+            if (mode == Mode.Host) reapStalePeers()
             runCatching { Thread.sleep(1000) }.getOrElse { return }
         }
+    }
+
+    /** Drop peers we haven't heard from in a while — removes "ghost" entries
+     *  left behind when a device disconnects and rejoins on a new port. */
+    private fun reapStalePeers() {
+        val now = System.currentTimeMillis()
+        val removed = synchronized(peers) {
+            val dead = peerSeen.filter { now - it.value > PEER_TIMEOUT_MS }.keys.toList()
+            dead.forEach { peers.remove(it); peerSeen.remove(it) }
+            dead.isNotEmpty()
+        }
+        if (removed) emitPeers()
     }
 
     /** Client announces its name to the host every ~1.5 s so the host registers
@@ -235,6 +250,7 @@ class VoiceTransport(
                 if (len < 1) continue
                 val type = buf[0]
                 val src = pkt.address ?: continue
+                if (mode == Mode.Host) peerSeen[PeerKey(src, pkt.port)] = System.currentTimeMillis()
 
                 when (type) {
                     TYPE_HELLO -> {
@@ -400,7 +416,9 @@ class VoiceTransport(
             .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
             .build()
         val minBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        return AudioTrack(attrs, fmt, minBuf * 4, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE).apply {
+        // Larger buffer (~bigger jitter cushion) → fewer underruns → clearer, less choppy audio.
+        val bufBytes = (minBuf * 8).coerceAtLeast(SAMPLE_RATE / 2)  // >= ~0.25s
+        return AudioTrack(attrs, fmt, bufBytes, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE).apply {
             runCatching { setVolume(AudioTrack.getMaxVolume()) }
         }
     }
@@ -419,5 +437,6 @@ class VoiceTransport(
         const val VOX_OFF = 0.04f
         const val TYPE_AUDIO: Byte = 0
         const val TYPE_HELLO: Byte = 1
+        const val PEER_TIMEOUT_MS = 6000L   // ~4 missed 1.5s keepalives → drop ghost
     }
 }
