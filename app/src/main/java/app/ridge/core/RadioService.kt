@@ -62,6 +62,7 @@ class RadioService : Service() {
             onError = { e -> store.setLastError(e) },
             onStats = { tx, rx -> store.setStats(tx, rx) },
             onIncomingStart = { if (store.state.value.chime) chime() },
+            onDiag = { myIp, target -> store.setDiag(myIp, target) },
         )
         startForegroundTyped()
         observeLifecycle()
@@ -133,16 +134,18 @@ class RadioService : Service() {
                             kotlinx.coroutines.delay(150)
                             enterCommunicationAudio()
                             transport.setMyName(store.state.value.myName.ifBlank { deviceName() })
-                            when (trig.role) {
+                            val started = when (trig.role) {
                                 Role.Host -> transport.startHost(network = null)
                                 Role.Joiner -> transport.startClient(
                                     trig.hostIp ?: "192.168.43.1",
                                     trig.joinNetwork,
                                 )
-                                else -> Unit
+                                else -> false
                             }
-                            transportRunning = true
-                            store.setTransportActive(true)
+                            // Only claim "connected" if the socket actually opened.
+                            transportRunning = started
+                            store.setTransportActive(started)
+                            if (!started) exitCommunicationAudio()
                         } else if (!wantTransport && transportRunning) {
                             transport.stop()
                             transportRunning = false

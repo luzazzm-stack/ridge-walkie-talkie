@@ -81,6 +81,11 @@ class WifiJoiner(private val ctx: Context) {
         // ── Path 3: infer from my IP
         if (gateway == null) gateway = viaInferenceFromMyIp(wm, diag)
 
+        // ── Path 4: permission-free — read the local Wi-Fi interface IPv4 and
+        //    assume the host/AP is .1 of that subnet. Works on every Android
+        //    version with no location permission, even with no default route.
+        if (gateway == null) gateway = viaNetworkInterface(diag)
+
         if (gateway == null) {
             _state.value = JoinState.Failed(
                 "No Wi-Fi connection detected. Join the host's hotspot in Wi-Fi settings first.",
@@ -155,4 +160,24 @@ class WifiJoiner(private val ctx: Context) {
 
     private fun intToIpv4(ip: Int): String =
         "${ip and 0xff}.${(ip shr 8) and 0xff}.${(ip shr 16) and 0xff}.${(ip shr 24) and 0xff}"
+
+    /** Read this device's own Wi-Fi IPv4 from the network interfaces and assume
+     *  the AP/host is the .1 of that /24. No permission required. */
+    private fun viaNetworkInterface(diag: MutableList<String>): String? {
+        return runCatching {
+            java.net.NetworkInterface.getNetworkInterfaces().toList()
+                .filter { it.isUp && !it.isLoopback }
+                .flatMap { it.interfaceAddresses }
+                .mapNotNull { ia ->
+                    val a = ia.address
+                    if (a is java.net.Inet4Address && !a.isLoopbackAddress) a.hostAddress else null
+                }
+                .firstOrNull { it.startsWith("192.168.") || it.startsWith("10.") || it.startsWith("172.") }
+                ?.let { ip ->
+                    val gw = ip.substringBeforeLast('.') + ".1"
+                    diag += "iface IP: $ip → inferred gateway: $gw"
+                    gw
+                }
+        }.getOrNull()
+    }
 }

@@ -71,7 +71,7 @@ fun SplashScreen(
                 color = c.hivis,
             )
             Text(
-                "v0.11.3",
+                "v0.12",
                 fontFamily = RidgeTheme.type.mono,
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.sp,

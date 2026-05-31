@@ -45,6 +45,7 @@ class VoiceTransport(
     private val onError: (String) -> Unit,
     private val onStats: (txPackets: Long, rxPackets: Long) -> Unit = { _, _ -> },
     private val onIncomingStart: () -> Unit = {},
+    private val onDiag: (myIp: String, targetIp: String) -> Unit = { _, _ -> },
 ) {
 
     enum class Mode { Host, Client }
@@ -75,38 +76,55 @@ class VoiceTransport(
     private val txPackets = AtomicLong(0)
     private val rxPackets = AtomicLong(0)
 
-    fun startHost(network: Network? = null) {
-        if (running.get()) return
+    fun startHost(network: Network? = null): Boolean {
+        if (running.get()) return true
         mode = Mode.Host
         resetStats()
-        runCatching {
+        val ok = runCatching {
             val s = DatagramSocket(null)
             s.reuseAddress = true
-            network?.bindSocket(s)
-            s.bind(java.net.InetSocketAddress(PORT))
+            s.bind(java.net.InetSocketAddress(PORT))   // bind local port FIRST
+            runCatching { network?.bindSocket(s) }      // then pin to network (non-fatal)
             socket = s
-        }.onFailure { onError("host bind: ${it.message}"); return }
+        }.isSuccess
+        if (!ok) { onError("host bind failed on :$PORT"); return false }
         startThreads()
         emitPeers()
+        onDiag(localIpv4(), "listening :$PORT")
+        return true
     }
 
-    fun startClient(hostIp: String, network: Network?) {
-        if (running.get()) return
+    fun startClient(hostIp: String, network: Network?): Boolean {
+        if (running.get()) return true
         mode = Mode.Client
         resetStats()
-        runCatching {
+        val ok = runCatching {
             hostAddr = InetAddress.getByName(hostIp)
             hostPort = PORT
             val s = DatagramSocket(null)
-            network?.bindSocket(s)
-            s.bind(null)
+            s.reuseAddress = true
+            s.bind(null)                                 // bind local ephemeral FIRST
+            runCatching { network?.bindSocket(s) }       // then pin to Wi-Fi (non-fatal:
+                                                         // on-link route still reaches host)
             socket = s
-        }.onFailure { onError("client connect: ${it.message}"); return }
+        }.isSuccess
+        if (!ok) { onError("client socket failed"); return false }
         startThreads()
-        // Connected to exactly one host — show it immediately (name fills in on reply).
         hostName = "Host"
         emitPeers()
+        onDiag(localIpv4(), hostIp)
+        return true
     }
+
+    /** Best-effort local site-local IPv4, for on-screen diagnostics. */
+    private fun localIpv4(): String = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.toList() }
+            .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address &&
+                    (it.isSiteLocalAddress || it.hostAddress?.startsWith("192.168.") == true) }
+            ?.hostAddress ?: "?"
+    }.getOrDefault("?")
 
     fun stop() {
         running.set(false)

@@ -72,6 +72,8 @@ data class UiState(
     val txPackets: Long = 0,
     val rxPackets: Long = 0,
     val lastError: String = "",
+    val myIp: String = "",
+    val targetIp: String = "",
 )
 
 class RidgeStore {
@@ -134,6 +136,8 @@ class RidgeStore {
             txPackets = 0,
             rxPackets = 0,
             lastError = "",
+            myIp = "",
+            targetIp = "",
         )
     }
 
@@ -149,6 +153,7 @@ class RidgeStore {
     fun setLastError(e: String) = _state.update { it.copy(lastError = e) }
     fun setMyName(name: String) = _state.update { it.copy(myName = name) }
     fun setMicTestActive(v: Boolean) = _state.update { it.copy(micTestActive = v) }
+    fun setDiag(myIp: String, targetIp: String) = _state.update { it.copy(myIp = myIp, targetIp = targetIp) }
 
     fun updateMembers(transform: (List<Member>) -> List<Member>) =
         _state.update { it.copy(members = transform(it.members)) }

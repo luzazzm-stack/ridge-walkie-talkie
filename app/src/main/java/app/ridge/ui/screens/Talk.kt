@@ -219,7 +219,7 @@ fun TalkScreen(
             ) {
                 Column {
                     Text(
-                        if (state.transportActive) "v0.11 · voice link live" else "v0.11 · waiting to connect",
+                        if (state.transportActive) "v0.12 · voice link live" else "v0.12 · waiting to connect",
                         fontFamily = RidgeTheme.type.mono,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
@@ -239,11 +239,15 @@ fun TalkScreen(
                         lineHeight = 16.sp,
                         color = c.ink,
                     )
-                    // packet counters — proves bytes are flowing even if audio is silent
+                    // diagnostics — IPs + packet flow. This is how we pinpoint failures.
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "sent ${state.txPackets} · recv ${state.rxPackets} packets" +
-                            if (state.lastError.isNotBlank()) "  ·  ⚠ ${state.lastError}" else "",
+                        buildString {
+                            append("my IP ${state.myIp.ifBlank { "?" }}")
+                            if (state.role == Role.Joiner) append("  →  host ${state.targetIp.ifBlank { "?" }}")
+                            append("\nsent ${state.txPackets} · recv ${state.rxPackets} pkts · peers ${state.peerCount}")
+                            if (state.lastError.isNotBlank()) append("\n⚠ ${state.lastError}")
+                        },
                         fontFamily = RidgeTheme.type.mono,
                         fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
