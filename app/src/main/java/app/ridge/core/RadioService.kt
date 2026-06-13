@@ -48,6 +48,8 @@ class RadioService : Service() {
         modeJob?.cancel()
         runCatching { transport.stop() }
         runCatching { vox.stop() }
+        transportRunning = false   // MUST reset — else a restart on this same instance
+                                   // sees stale true and never re-starts the transport.
         exitCommunicationAudio()
         releaseWake()
         store.leaveGroup()
@@ -179,6 +181,8 @@ class RadioService : Service() {
                             exitCommunicationAudio()
                         }
                         updateNotif()
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e   // let cancellation unwind cleanly (don't record as an error)
                     } catch (e: Throwable) {
                         store.setLastError("transport: ${e.message}")
                         transportRunning = false
@@ -225,6 +229,8 @@ class RadioService : Service() {
                             }
                         }
                         updateNotif()
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
                     } catch (e: Throwable) {
                         store.setLastError("transmit: ${e.message}")
                     }

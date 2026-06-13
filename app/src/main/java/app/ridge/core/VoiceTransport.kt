@@ -132,14 +132,20 @@ class VoiceTransport(
         running.set(false)
         voxEnabled.set(false)
         holdPressed.set(false)
-        sender?.interrupt(); sender = null
-        receiver?.interrupt(); receiver = null
-        statsThread?.interrupt(); statsThread = null
-        keepAliveThread?.interrupt(); keepAliveThread = null
+        // Close the socket FIRST so receiveLoop's blocking receive() unblocks,
+        // then JOIN the workers so no straggler callback fires after this returns
+        // and no orphaned thread busy-spins on the closed socket after a restart.
         runCatching { socket?.close() }
+        val workers = listOfNotNull(sender, receiver, statsThread, keepAliveThread)
+        sender = null; receiver = null; statsThread = null; keepAliveThread = null
+        val self = Thread.currentThread()
+        for (t in workers) {
+            if (t === self) continue
+            t.interrupt()
+            runCatching { t.join(300) }
+        }
         socket = null
-        peers.clear()
-        peerSeen.clear()
+        synchronized(peers) { peers.clear(); peerSeen.clear() }
         onPeers(emptyList())
         onActiveChanged(false)
         onLevel(0f)
@@ -189,17 +195,18 @@ class VoiceTransport(
 
     /** Drop peers we haven't heard from in a while — removes "ghost" entries
      *  left behind when a device disconnects and rejoins on a new port.
-     *  Iterate peerSeen while holding ITS OWN monitor (the same one its puts use),
-     *  so a concurrent receive-thread put can't trigger ConcurrentModification. */
+     *  Snapshot AND eviction happen under one peers-monitor block (the same lock
+     *  the receive-side peerSeen write and the HELLO registration hold), so the
+     *  filter can't ConcurrentModification and a just-refreshed peer can't be
+     *  evicted between two separate lock acquisitions. */
     private fun reapStalePeers() {
         val now = System.currentTimeMillis()
-        val dead = synchronized(peerSeen) {
-            peerSeen.entries.filter { now - it.value > PEER_TIMEOUT_MS }.map { it.key }
+        val removed = synchronized(peers) {
+            val dead = peerSeen.entries.filter { now - it.value > PEER_TIMEOUT_MS }.map { it.key }
+            dead.forEach { peers.remove(it); peerSeen.remove(it) }
+            dead.isNotEmpty()
         }
-        if (dead.isEmpty()) return
-        synchronized(peers) { dead.forEach { peers.remove(it) } }
-        synchronized(peerSeen) { dead.forEach { peerSeen.remove(it) } }
-        emitPeers()
+        if (removed) emitPeers()
     }
 
     /** Client announces its name to the host every ~1.5 s so the host registers
@@ -253,7 +260,9 @@ class VoiceTransport(
                 if (len < 1) continue
                 val type = buf[0]
                 val src = pkt.address ?: continue
-                if (mode == Mode.Host) peerSeen[PeerKey(src, pkt.port)] = System.currentTimeMillis()
+                // peerSeen is guarded by the peers monitor (same lock reapStalePeers
+                // and the HELLO registration use) so reaping stays atomic + CME-safe.
+                if (mode == Mode.Host) synchronized(peers) { peerSeen[PeerKey(src, pkt.port)] = System.currentTimeMillis() }
 
                 when (type) {
                     TYPE_HELLO -> {
