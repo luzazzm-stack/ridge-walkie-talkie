@@ -188,15 +188,18 @@ class VoiceTransport(
     }
 
     /** Drop peers we haven't heard from in a while — removes "ghost" entries
-     *  left behind when a device disconnects and rejoins on a new port. */
+     *  left behind when a device disconnects and rejoins on a new port.
+     *  Iterate peerSeen while holding ITS OWN monitor (the same one its puts use),
+     *  so a concurrent receive-thread put can't trigger ConcurrentModification. */
     private fun reapStalePeers() {
         val now = System.currentTimeMillis()
-        val removed = synchronized(peers) {
-            val dead = peerSeen.filter { now - it.value > PEER_TIMEOUT_MS }.keys.toList()
-            dead.forEach { peers.remove(it); peerSeen.remove(it) }
-            dead.isNotEmpty()
+        val dead = synchronized(peerSeen) {
+            peerSeen.entries.filter { now - it.value > PEER_TIMEOUT_MS }.map { it.key }
         }
-        if (removed) emitPeers()
+        if (dead.isEmpty()) return
+        synchronized(peers) { dead.forEach { peers.remove(it) } }
+        synchronized(peerSeen) { dead.forEach { peerSeen.remove(it) } }
+        emitPeers()
     }
 
     /** Client announces its name to the host every ~1.5 s so the host registers

@@ -64,25 +64,26 @@ class RadioService : Service() {
         router = AudioRouter(this)
         vox = VoxRecorder(
             ctx = this,
-            onLevel = { lvl -> store.setVoxLevel((lvl * 100).toInt()) },
+            onLevel = { lvl -> if (!stopping) store.setVoxLevel((lvl * 100).toInt()) },
             onActiveChanged = { active ->
-                store.setTransmitting(active)
-                updateNotif()
+                if (!stopping) { store.setTransmitting(active); updateNotif() }
             },
         )
         transport = VoiceTransport(
             ctx = this,
-            onLevel = { lvl -> store.setVoxLevel((lvl * 100).toInt()) },
+            onLevel = { lvl -> if (!stopping) store.setVoxLevel((lvl * 100).toInt()) },
             onActiveChanged = { active ->
-                store.setTransmitting(active)
-                if (active && store.state.value.haptic) buzz()
-                updateNotif()
+                if (!stopping) {
+                    store.setTransmitting(active)
+                    if (active && store.state.value.haptic) buzz()
+                    updateNotif()
+                }
             },
-            onPeers = { names -> store.setPeers(names); updateNotif() },
-            onError = { e -> store.setLastError(e) },
-            onStats = { tx, rx -> store.setStats(tx, rx) },
-            onIncomingStart = { if (store.state.value.chime) chime() },
-            onDiag = { myIp, target -> store.setDiag(myIp, target) },
+            onPeers = { names -> if (!stopping) { store.setPeers(names); updateNotif() } },
+            onError = { e -> if (!stopping) store.setLastError(e) },
+            onStats = { tx, rx -> if (!stopping) store.setStats(tx, rx) },
+            onIncomingStart = { if (!stopping && store.state.value.chime) chime() },
+            onDiag = { myIp, target -> if (!stopping) store.setDiag(myIp, target) },
         )
         startForegroundTyped()
         observeLifecycle()
@@ -93,9 +94,18 @@ class RadioService : Service() {
             fullStop()
             return START_NOT_STICKY
         }
-        stopping = false   // normal (re)start clears any prior stopping state
+        stopping = false                 // normal (re)start clears prior stopping state
+        ensureObserving()                // relaunch collectors if a prior fullStop cancelled modeJob
         startForegroundTyped()
         return START_STICKY
+    }
+
+    /** observeLifecycle() launches the store collectors into modeJob. fullStop()
+     *  cancels modeJob; if the SAME service instance is reused for a later start
+     *  (stopSelf is deferred), the collectors would otherwise stay dead and the
+     *  radio would never engage again. Relaunch when missing. */
+    private fun ensureObserving() {
+        if (modeJob?.isActive != true) observeLifecycle()
     }
 
     /** Start as a typed foreground service so the mic works in the background.
@@ -138,6 +148,7 @@ class RadioService : Service() {
                 }
                 .distinctUntilChanged()
                 .onEach { trig ->
+                    if (stopping) return@onEach   // don't resurrect transport mid-teardown
                     try {
                         val wantTransport = trig.hasGroup && (
                                 (trig.role == Role.Host && trig.hotspotActive) ||
@@ -188,6 +199,7 @@ class RadioService : Service() {
                 }
                 .distinctUntilChanged()
                 .onEach { t ->
+                    if (stopping) return@onEach
                     try {
                         if (t.transportActive) {
                             when (t.talkMode) {
