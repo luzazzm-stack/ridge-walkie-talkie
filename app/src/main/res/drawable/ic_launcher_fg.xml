@@ -11,11 +11,11 @@
         android:scaleY="0.72">
         <!-- dot (dark) -->
         <path
-            android:fillColor="#111111"
+            android:fillColor="#FFFFFF"
             android:pathData="M43.5,74 A6.5,6.5 0 1,0 56.5,74 A6.5,6.5 0 1,0 43.5,74 Z" />
         <!-- arc 1 inner (dark) -->
         <path
-            android:strokeColor="#111111"
+            android:strokeColor="#FFFFFF"
             android:strokeWidth="6.5"
             android:strokeLineCap="round"
             android:strokeLineJoin="round"
@@ -23,7 +23,7 @@
             android:pathData="M37,62 L50,49 L63,62" />
         <!-- arc 2 mid (dark) -->
         <path
-            android:strokeColor="#111111"
+            android:strokeColor="#FFFFFF"
             android:strokeWidth="6.5"
             android:strokeLineCap="round"
             android:strokeLineJoin="round"
